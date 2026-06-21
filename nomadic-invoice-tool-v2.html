@@ -3481,15 +3481,12 @@ async function sendChatMessage() {
   appendChatMsg('user', msg);
   chatHistory.push({ role: 'user', content: msg });
   try {
-    var resp = await fetch('https://api.anthropic.com/v1/messages', {
+    // Route through the Netlify serverless function to avoid CORS issues
+    var resp = await fetch('/.netlify/functions/chat', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-allow-browser': 'true',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        apiKey: apiKey,
         model: 'claude-opus-4-5',
         max_tokens: 1024,
         system: 'You are a helpful assistant for Nomadic Clerical Support, a fire camp copy unit company. Help staff with questions about copy unit operations, invoicing procedures, equipment, and how to use the Nomadic Invoice Tool. Be concise, friendly, and practical. Do not offer to modify any software or settings — direct technical changes to admin.',
@@ -3499,7 +3496,7 @@ async function sendChatMessage() {
     if (!resp.ok) {
       var errData = await resp.json().catch(function(){ return {}; });
       var errMsg = (errData.error && errData.error.message) ? errData.error.message : 'HTTP ' + resp.status;
-      if (resp.status === 401) errMsg = 'Invalid API key — go to Admin → Rates and re-enter your key.';
+      if (resp.status === 401) errMsg = 'Invalid API key — go to Admin and re-enter your key.';
       if (resp.status === 429) errMsg = 'Rate limit reached — wait a moment and try again.';
       if (resp.status === 400) errMsg = 'Bad request: ' + errMsg;
       appendChatMsg('assistant', '⚠️ ' + errMsg);
@@ -3510,9 +3507,7 @@ async function sendChatMessage() {
       appendChatMsg('assistant', reply);
     }
   } catch(err) {
-    var hint = 'This is usually a network or browser security issue, not the API key itself. ';
-    hint += 'Try: (1) confirm you have internet access, (2) open the tool in Chrome or Edge, (3) if opening as a local file, try hosting it on a local web server.';
-    appendChatMsg('assistant', '⚠️ Network error — could not reach Anthropic. ' + hint);
+    appendChatMsg('assistant', '⚠️ Network error — could not reach the server. Check your internet connection and try again.');
   } finally {
     btn.disabled = false; btn.textContent = 'Send';
   }
