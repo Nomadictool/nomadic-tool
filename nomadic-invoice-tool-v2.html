@@ -720,6 +720,23 @@ body {
         </div>
       </div>
 
+      <div class="section-label">Incident Location &amp; Per Diem</div>
+      <div class="form-grid" style="margin-bottom:10px">
+        <div class="form-group">
+          <label>Incident City</label>
+          <input type="text" id="setup-city" placeholder="e.g. Redding" style="text-transform:capitalize">
+        </div>
+        <div class="form-group">
+          <label>State (2-letter code)</label>
+          <input type="text" id="setup-state" placeholder="e.g. CA" maxlength="2" style="text-transform:uppercase">
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
+        <button type="button" class="btn btn-outline btn-sm" onclick="lookupPerDiem()">🔍 Look Up GSA Per Diem Rates</button>
+        <span id="perdiem-status" style="font-size:12px;color:var(--gray-500)"></span>
+      </div>
+      <div id="perdiem-rates-display" style="display:none;background:var(--off-white);border:1px solid var(--gray-200);border-radius:var(--radius);padding:10px 14px;font-size:13px;margin-bottom:14px;line-height:1.6"></div>
+
       <div class="section-label">Staff Members</div>
       <div id="staff-names-list" style="margin-bottom:8px"></div>
       <button type="button" class="btn btn-outline btn-sm" onclick="addStaffRow()">+ Add Staff Member</button>
@@ -818,8 +835,9 @@ body {
             <tr>
               <th>#</th>
               <th>Dept / Description</th>
-              <th>8.5×11</th>
-              <th>11×17</th>
+              <th>B&amp;W</th>
+              <th>Color</th>
+              <th>Scans</th>
               <th>Finishing</th>
               <th>Plots</th>
               <th></th>
@@ -839,6 +857,10 @@ body {
       </div>
       <div class="total-amount" id="day-total-display">$0.00</div>
     </div>
+
+    <!-- Per Diem section (admin-only, only shown when incident has GSA rates) -->
+    <div id="perdiem-section" style="display:none"></div>
+
   </div>
 
   <!-- ══ INVOICE SCREEN ══ -->
@@ -1233,6 +1255,11 @@ body {
         </div>
       </div>
 
+      <!-- Quick-save row — lets user tap Add to Log without scrolling to the bottom -->
+      <div style="display:flex;justify-content:flex-end;margin-bottom:14px">
+        <button type="button" class="btn btn-primary btn-sm" onclick="saveOrder()" id="save-order-btn-top" style="font-size:12px;padding:7px 16px">Add to Log ↓</button>
+      </div>
+
       <div class="section-label">8.5 × 11</div>
       <div class="form-grid-4">
         <div class="form-group"><label>B&W (ea)</label><input type="number" class="qty-input" id="o-bw85" min="0" value="0"></div>
@@ -1499,6 +1526,14 @@ const state = {
     const e = this._incidents.find(i => i.id === this._activeId);
     return e ? (e.checks || {}) : {};
   },
+  get perDiem() {
+    const e = this._incidents.find(i => i.id === this._activeId);
+    return e ? (e.perDiem || {}) : {};
+  },
+  set perDiem(val) {
+    const e = this._incidents.find(i => i.id === this._activeId);
+    if (e) e.perDiem = val;
+  },
 };
 
 function todayStr() {
@@ -1662,6 +1697,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     state._activeId = savedId;
   }
 
+  state.currentDate = todayStr();
   document.getElementById('daily-date').value = state.currentDate;
   document.getElementById('setup-start-date').value = state.currentDate;
 
@@ -1724,11 +1760,150 @@ function onAgencyChange() {
   }
 }
 
+// ══════════ GSA PER DIEM LOOKUP ══════════
+async function lookupPerDiem() {
+  const city = (document.getElementById('setup-city').value || '').trim();
+  const st   = (document.getElementById('setup-state').value || '').trim().toUpperCase();
+  const statusEl = document.getElementById('perdiem-status');
+  const ratesEl  = document.getElementById('perdiem-rates-display');
+  if (!city || st.length < 2) {
+    statusEl.textContent = '⚠️ Enter city and 2-letter state first.';
+    return;
+  }
+  statusEl.textContent = '⏳ Looking up…';
+  ratesEl.style.display = 'none';
+  try {
+    const year = new Date().getFullYear();
+    const url = `https://api.gsa.gov/travel/perdiem/v2/rates/city/${encodeURIComponent(city)}/state/${encodeURIComponent(st)}/year/${year}`;
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    const rate = data?.rates?.[0]?.rate?.[0];
+    if (!rate) {
+      statusEl.textContent = '⚠️ No rates found — check city/state spelling.';
+      return;
+    }
+    // Lodging varies by month; pick the current month or "standard"
+    const monthKeys = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+    const mk = monthKeys[new Date().getMonth()];
+    const lodging = rate.months?.[mk]?.value ?? rate.months?.standard?.value ?? 0;
+    window._pendingPerDiem = {
+      mie:         rate.meals         || 0,
+      lodging:     Number(lodging)    || 0,
+      breakfast:   rate.breakfast     || 0,
+      lunch:       rate.lunch         || 0,
+      dinner:      rate.dinner        || 0,
+      incidentals: rate.incidentals   || 0,
+    };
+    statusEl.textContent = '✓ Rates loaded — save the incident to store them.';
+    ratesEl.style.display = 'block';
+    ratesEl.innerHTML =
+      `<strong>${city}, ${st} (${year})</strong><br>` +
+      `M&IE: <strong>$${window._pendingPerDiem.mie}/day</strong> &nbsp;·&nbsp; ` +
+      `Lodging: <strong>$${window._pendingPerDiem.lodging}/night</strong><br>` +
+      `<span style="color:var(--gray-500)">Breakfast $${window._pendingPerDiem.breakfast} &nbsp;·&nbsp; ` +
+      `Lunch $${window._pendingPerDiem.lunch} &nbsp;·&nbsp; ` +
+      `Dinner $${window._pendingPerDiem.dinner} &nbsp;·&nbsp; ` +
+      `Incidentals $${window._pendingPerDiem.incidentals}</span>`;
+  } catch(err) {
+    statusEl.textContent = '❌ Lookup failed — check connection or try again.';
+    console.error('[Nomadic] GSA lookup error:', err);
+  }
+}
+
+// Compute the per diem claim for a given date
+function calcPerDiemForDate(date) {
+  const inc = state.incident;
+  if (!inc?.perDiemRates) return { mie: 0, lodging: 0, total: 0 };
+  const r   = inc.perDiemRates;
+  const day = (state.perDiem || {})[date] || {};
+  const mieDeduction =
+    (day.bkfstProvided  ? (r.breakfast     || 0) : 0) +
+    (day.lunchProvided  ? (r.lunch         || 0) : 0) +
+    (day.dinnerProvided ? (r.dinner        || 0) : 0);
+  const mie     = Math.max(0, (r.mie || 0) - mieDeduction);
+  const lodging = day.lodgingClaimed ? (r.lodging || 0) : 0;
+  return { mie, lodging, total: mie + lodging };
+}
+
+// Save per diem selections for the current date
+function savePerDiem(date) {
+  const pd = Object.assign({}, state.perDiem);
+  pd[date] = {
+    bkfstProvided:  document.getElementById('pd-bkfst')?.checked  || false,
+    lunchProvided:  document.getElementById('pd-lunch')?.checked  || false,
+    dinnerProvided: document.getElementById('pd-dinner')?.checked || false,
+    lodgingClaimed: document.getElementById('pd-lodging')?.checked || false,
+  };
+  state.perDiem = pd;
+  saveState();
+  renderPerDiemSection(date);
+  updateDayTotalBox(date);
+}
+
+// Render the per diem card in the daily log
+function renderPerDiemSection(date) {
+  const container = document.getElementById('perdiem-section');
+  if (!container) return;
+  const inc = state.incident;
+  if (!inc?.perDiemRates || !state.adminUnlocked) { container.style.display = 'none'; return; }
+  container.style.display = 'block';
+  const r   = inc.perDiemRates;
+  const day = (state.perDiem || {})[date] || {};
+  const claim = calcPerDiemForDate(date);
+  container.innerHTML = `
+    <div class="card mt-16">
+      <div class="card-header">
+        <div class="card-title">Per Diem — ${inc.city || ''}${inc.incState ? ', '+inc.incState : ''}</div>
+        <div style="font-size:12px;color:var(--gray-500)">GSA rates · ${date}</div>
+      </div>
+      <div style="padding:16px 20px">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px 24px;margin-bottom:14px">
+          <div style="font-size:13px">
+            <div style="font-weight:600;margin-bottom:6px;color:var(--navy)">Meals provided by government today?</div>
+            <label style="display:flex;align-items:center;gap:8px;margin-bottom:4px;cursor:pointer">
+              <input type="checkbox" id="pd-bkfst" onchange="savePerDiem('${date}')" ${day.bkfstProvided?'checked':''}>
+              <span>Breakfast (deduct $${r.breakfast})</span>
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;margin-bottom:4px;cursor:pointer">
+              <input type="checkbox" id="pd-lunch" onchange="savePerDiem('${date}')" ${day.lunchProvided?'checked':''}>
+              <span>Lunch (deduct $${r.lunch})</span>
+            </label>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+              <input type="checkbox" id="pd-dinner" onchange="savePerDiem('${date}')" ${day.dinnerProvided?'checked':''}>
+              <span>Dinner (deduct $${r.dinner})</span>
+            </label>
+          </div>
+          <div style="font-size:13px">
+            <div style="font-weight:600;margin-bottom:6px;color:var(--navy)">Lodging</div>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+              <input type="checkbox" id="pd-lodging" onchange="savePerDiem('${date}')" ${day.lodgingClaimed?'checked':''}>
+              <span>Claim lodging tonight ($${r.lodging}/night)</span>
+            </label>
+          </div>
+        </div>
+        <div style="background:var(--navy);border-radius:var(--radius-lg);padding:10px 16px;display:flex;justify-content:space-between;align-items:center">
+          <div>
+            <div style="font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--gray-400)">Per Diem Claim</div>
+            <div style="font-size:12px;color:var(--gray-500);margin-top:2px">M&IE: $${claim.mie}${claim.lodging ? ' + Lodging: $'+claim.lodging : ''}</div>
+          </div>
+          <div style="font-family:'IBM Plex Mono',monospace;font-size:20px;font-weight:500;color:var(--amber)">$${claim.total.toFixed(2)}</div>
+        </div>
+      </div>
+    </div>`;
+}
+
 function populateSetupDefaults() {
   document.getElementById('setup-start-date').value = todayStr();
   document.getElementById('setup-service-type').value = 'clerical';
   document.getElementById('setup-unit').value = '';
   document.getElementById('setup-day-rate').value = DEFAULT_RATES.standard.dayRate;
+  document.getElementById('setup-city').value = '';
+  document.getElementById('setup-state').value = '';
+  document.getElementById('perdiem-status').textContent = '';
+  document.getElementById('perdiem-rates-display').style.display = 'none';
+  document.getElementById('perdiem-rates-display').innerHTML = '';
+  window._pendingPerDiem = null;
 }
 
 // ══════════ SETUP ══════════
@@ -1794,7 +1969,14 @@ function saveSetup() {
 
   if (!name || !eNumber) { alert('Please enter incident name and resource number.'); return; }
 
-  const incData = { name, eNumber, agency, startDate, dayRate, serviceType, unit, staffNames, addStaff, additionalStaff };
+  const city = (document.getElementById('setup-city').value || '').trim();
+  const incState = (document.getElementById('setup-state').value || '').trim().toUpperCase();
+  // Preserve existing perDiemRates if a new lookup wasn't done this session
+  const existing2 = state._incidents.find(i => i.id === state._activeId);
+  const perDiemRates = window._pendingPerDiem || (existing2?.incident?.perDiemRates) || null;
+  window._pendingPerDiem = null; // clear after use
+
+  const incData = { name, eNumber, agency, startDate, dayRate, serviceType, unit, staffNames, addStaff, additionalStaff, city, incState, perDiemRates };
   const existing = state._incidents.find(i => i.id === state._activeId);
   if (existing) {
     existing.incident = incData;
@@ -1827,6 +2009,19 @@ function showSetup() {
     document.getElementById('add-staff-list').innerHTML = '';
     (inc.additionalStaff || []).forEach(s => addAdditionalStaffRow(s.name, s.rate));
     toggleAddStaffSetup();
+    // Repopulate location/per diem
+    document.getElementById('setup-city').value = inc.city || '';
+    document.getElementById('setup-state').value = inc.incState || '';
+    if (inc.perDiemRates) {
+      const r = inc.perDiemRates;
+      document.getElementById('perdiem-status').textContent = '✓ Rates saved';
+      document.getElementById('perdiem-rates-display').style.display = 'block';
+      document.getElementById('perdiem-rates-display').innerHTML = `<strong>${inc.city}, ${inc.incState}</strong> — M&IE: $${r.mie}/day · Lodging: $${r.lodging}/night · Breakfast: $${r.breakfast} · Lunch: $${r.lunch} · Dinner: $${r.dinner} · Incidentals: $${r.incidentals}`;
+    } else {
+      document.getElementById('perdiem-status').textContent = '';
+      document.getElementById('perdiem-rates-display').style.display = 'none';
+      document.getElementById('perdiem-rates-display').innerHTML = '';
+    }
   }
   setSetupModalMode(!!state.incident);
   document.getElementById('setup-modal').style.display = 'flex';
@@ -1918,6 +2113,7 @@ function openAddOrder(orderId) {
     if (!ord) return;
     document.getElementById('order-modal-title').textContent = 'Edit Order';
     document.getElementById('save-order-btn').textContent = 'Update Order';
+    document.getElementById('save-order-btn-top').textContent = 'Update Order ↓';
     document.getElementById('order-dept').value = ord.dept;
     document.getElementById('order-desc').value = ord.desc;
     const q = ord.quantities;
@@ -1938,6 +2134,7 @@ function openAddOrder(orderId) {
   } else {
     document.getElementById('order-modal-title').textContent = 'Add Order';
     document.getElementById('save-order-btn').textContent = 'Add to Log';
+    document.getElementById('save-order-btn-top').textContent = 'Add to Log ↓';
     resetOrderForm();
   }
   modal.style.display = 'flex';
@@ -1947,6 +2144,8 @@ function openAddOrder(orderId) {
 function closeAddOrder() {
   document.getElementById('add-order-modal').style.display = 'none';
   state.selectedPlotType = null;
+  state.editingOrderId = null;
+  resetOrderForm();
 }
 
 function resetOrderForm() {
@@ -2081,6 +2280,7 @@ function updateOrderLiveTotal() {
 function attachOrderListeners() {
   document.querySelectorAll('#add-order-modal input[type=number]').forEach(el => {
     el.addEventListener('input', updateOrderLiveTotal);
+    el.addEventListener('focus', function() { this.select(); });
   });
 }
 
@@ -2157,6 +2357,7 @@ document.getElementById('daily-subtitle').textContent = `${inc.name} · ${inc.eN
         <td><strong>${ord.dept||'—'}</strong><br><span class="text-sm text-muted">${ord.desc||''}</span></td>
         <td class="text-sm">${bw ? bw+'pp' : '—'}</td>
         <td class="text-sm">${col ? col+'pp' : '—'}</td>
+        <td class="text-sm">${(q.scans||0) ? q.scans : '—'}</td>
         <td class="text-sm">${fin ? fin+' items' : '—'}</td>
         <td class="text-sm">${[plots, extras].filter(Boolean).join(' / ')||'—'}</td>
         <td><div style="display:flex;gap:4px">
@@ -2168,6 +2369,7 @@ document.getElementById('daily-subtitle').textContent = `${inc.name} · ${inc.eN
   }
 
   updateDayTotalBox(date);
+  renderPerDiemSection(date);
 }
 
 function updateDayTotalBox(date) {
@@ -2178,11 +2380,13 @@ function updateDayTotalBox(date) {
   const orderTotal = todayOrders.reduce((sum, o) => sum + calcOrderTotal(o), 0);
   const staffTotal = inc.dayRate; // flat day rate for the equipment/unit
   const addStaffTotal = inc.addStaff ? (inc.additionalStaff || []).reduce((sum, s) => sum + (s.rate || 0), 0) : 0;
-  const grand = orderTotal + staffTotal + addStaffTotal;
+  const perDiemTotal = calcPerDiemForDate(date).total;
+  const grand = orderTotal + staffTotal + addStaffTotal + perDiemTotal;
   document.getElementById('day-total-display').textContent = '$' + grand.toFixed(2);
   let breakdown = `Day rate: $${staffTotal.toFixed(2)}`;
   if (addStaffTotal) breakdown += ` + Add'l staff: $${addStaffTotal.toFixed(2)}`;
   breakdown += ` + Services: $${orderTotal.toFixed(2)}`;
+  if (perDiemTotal) breakdown += ` + Per Diem: $${perDiemTotal.toFixed(2)}`;
   document.getElementById('day-total-breakdown').textContent = breakdown;
 }
 
@@ -2276,7 +2480,8 @@ function renderInvoice() {
   const serviceTotal = lines.reduce((s, l) => s + l.subtotal, 0);
   const staffTotal = inc.dayRate; // flat day rate for the equipment/unit
   const addStaffTotal = inc.addStaff ? (inc.additionalStaff || []).reduce((sum, s) => sum + (s.rate || 0), 0) : 0;
-  const grand = serviceTotal + staffTotal + addStaffTotal;
+  const pdClaim = calcPerDiemForDate(date);
+  const grand = serviceTotal + staffTotal + addStaffTotal + pdClaim.total;
 
   const agencyName = isCF ? 'CAL FIRE' : (inc.agency === 'federal' ? 'USDA Forest Service' : 'State/Local Agency');
 
@@ -2332,13 +2537,18 @@ function renderInvoice() {
             <td class="inv-money">$${(s.rate||0).toFixed(2)}</td>
             <td class="inv-money">$${(s.rate||0).toFixed(2)}</td>
           </tr>`).join('') : ''}
-          ${lines.length ? `<tr class="rate-row"><td colspan="5" style="font-weight:600;color:var(--navy);padding-top:10px">Copy & Print Services</td></tr>` : ''}
+          ${lines.length ? `<tr class="rate-row"><td colspan="5" style="font-weight:600;color:var(--navy);padding-top:10px">Copy &amp; Print Services</td></tr>` : ''}
           ${lines.map(l => `<tr class="rate-row">
             <td>${l.name}</td>
             <td>${l.qty}</td><td>${l.unit}</td>
             <td class="inv-money">$${l.rate.toFixed(2)}</td>
             <td class="inv-money">$${l.subtotal.toFixed(2)}</td>
           </tr>`).join('')}
+          ${pdClaim.total > 0 ? `
+            <tr class="rate-row"><td colspan="5" style="font-weight:600;color:var(--navy);padding-top:10px">Per Diem (GSA — ${inc.city || ''}${inc.incState ? ', '+inc.incState : ''})</td></tr>
+            ${pdClaim.mie > 0 ? `<tr class="rate-row"><td>M&amp;IE</td><td>1</td><td>day</td><td class="inv-money">$${pdClaim.mie.toFixed(2)}</td><td class="inv-money">$${pdClaim.mie.toFixed(2)}</td></tr>` : ''}
+            ${pdClaim.lodging > 0 ? `<tr class="rate-row"><td>Lodging</td><td>1</td><td>night</td><td class="inv-money">$${pdClaim.lodging.toFixed(2)}</td><td class="inv-money">$${pdClaim.lodging.toFixed(2)}</td></tr>` : ''}
+          ` : ''}
         </tbody>
         <tfoot>
           <tr class="subtotal-row">
