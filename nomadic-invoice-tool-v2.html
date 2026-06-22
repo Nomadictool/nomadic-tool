@@ -1246,11 +1246,13 @@ body {
       <div class="form-grid" style="margin-bottom:16px">
         <div class="form-group">
           <label>Department / Section</label>
-          <input type="text" id="order-dept" placeholder="e.g. Operations, Finance, Plans…">
+          <input type="text" id="order-dept" placeholder="e.g. Operations, Finance, Plans…" list="dept-suggestions" autocomplete="off">
+          <datalist id="dept-suggestions"></datalist>
         </div>
         <div class="form-group">
           <label>Job Description</label>
-          <input type="text" id="order-desc" placeholder="e.g. IAP copies, Maps for briefing…">
+          <input type="text" id="order-desc" placeholder="e.g. IAP copies, Maps for briefing…" list="desc-suggestions" autocomplete="off">
+          <datalist id="desc-suggestions"></datalist>
         </div>
       </div>
 
@@ -1543,7 +1545,13 @@ function todayStr() {
 function saveState() {
   localStorage.setItem('nomadic_active_id', state._activeId || '');
   localStorage.setItem('nomadic_current_date', state.currentDate || todayStr());
-  persistToSupabase(); // fire-and-forget — does not block the UI
+  // Full local backup — insurance if Supabase save fails
+  try {
+    localStorage.setItem('nomadic_local_backup', JSON.stringify(state._incidents));
+    localStorage.setItem('nomadic_local_backup_ts', new Date().toISOString());
+    localStorage.setItem('nomadic_local_rates', JSON.stringify(state.rates));
+  } catch(e) { console.warn('localStorage backup failed:', e); }
+  persistToSupabase();
 }
 function loadSessionState() {
   // Restore only lightweight session markers; incident data comes from Supabase
@@ -1556,25 +1564,34 @@ const SUPABASE_URL = 'https://ljuvujkqxbpjneylmgse.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_kzcSAcuCxbnzhEV64GrJ_w_CuG53MSD';
 const _sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
+// Track the timestamp of the last successful Supabase save so the realtime
+// handler can tell whether incoming data is newer than what we already have.
+let _lastSuccessfulSaveTs = null;
+
 // Push all in-memory incidents and rates to Supabase (called by saveState)
 async function persistToSupabase() {
+  const saveTs = new Date().toISOString();
   try {
     if (state._incidents.length > 0) {
       const rows = state._incidents.map(inc => ({
         id: inc.id,
         data: inc,
-        updated_at: new Date().toISOString()
+        updated_at: saveTs
       }));
       const { error } = await _sb.from('incidents').upsert(rows);
-      if (error) console.error('Supabase upsert error:', error);
+      if (error) throw error;
     }
-    await _sb.from('app_config').upsert({
+    const { error: cfgErr } = await _sb.from('app_config').upsert({
       key: 'rates',
       value: state.rates,
-      updated_at: new Date().toISOString()
+      updated_at: saveTs
     });
+    if (cfgErr) throw cfgErr;
+    _lastSuccessfulSaveTs = saveTs;
+    showSyncPulse('ok');
   } catch(err) {
     console.error('Supabase persist error:', err);
+    showSyncPulse('error');
   }
 }
 
@@ -1586,7 +1603,28 @@ async function loadFromSupabase() {
   ]);
   if (incRes.error) throw incRes.error;
   if (incRes.data && incRes.data.length > 0) {
-    state._incidents = incRes.data.map(r => r.data);
+    // Compare Supabase data against the local backup — use whichever is newer
+    const supabaseIncs = incRes.data.map(r => r.data);
+    const backupRaw = localStorage.getItem('nomadic_local_backup');
+    const backupTs  = localStorage.getItem('nomadic_local_backup_ts');
+    const supabaseTs = incRes.data.reduce((max, r) => r.updated_at > max ? r.updated_at : max, '');
+    if (backupRaw && backupTs && backupTs > supabaseTs) {
+      // Local backup is newer — Supabase missed some saves, recover from backup
+      console.warn('[Nomadic] Local backup is newer than Supabase — recovering from backup');
+      state._incidents = JSON.parse(backupRaw);
+      // Push the recovered data back up to Supabase immediately
+      persistToSupabase();
+    } else {
+      state._incidents = supabaseIncs;
+    }
+  } else {
+    // Supabase is empty — fall back to local backup if available
+    const backupRaw = localStorage.getItem('nomadic_local_backup');
+    if (backupRaw) {
+      console.warn('[Nomadic] Supabase empty — recovering from local backup');
+      state._incidents = JSON.parse(backupRaw);
+      persistToSupabase();
+    }
   }
   if (cfgRes.data && cfgRes.data.value) {
     state.rates = cfgRes.data.value;
@@ -1627,7 +1665,13 @@ function subscribeRealtime() {
     .on('postgres_changes', { event: '*', schema: 'public', table: 'incidents' }, payload => {
       if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
         const incoming = payload.new.data;
+        const incomingTs = payload.new.updated_at;
         if (!incoming) return;
+        // Guard: if this is the active incident and we have a more recent local save,
+        // don't let a stale realtime echo overwrite our fresh data.
+        if (incoming.id === state._activeId && _lastSuccessfulSaveTs && incomingTs < _lastSuccessfulSaveTs) {
+          return;
+        }
         const idx = state._incidents.findIndex(i => i.id === incoming.id);
         if (idx >= 0) {
           state._incidents[idx] = incoming;
@@ -1658,12 +1702,22 @@ function subscribeRealtime() {
     .subscribe();
 }
 
-function showSyncPulse() {
+function showSyncPulse(status) {
   const el = document.getElementById('sync-pulse');
   if (!el) return;
-  el.style.opacity = '1';
   clearTimeout(el._fadeTimer);
-  el._fadeTimer = setTimeout(() => { el.style.opacity = '0'; }, 2500);
+  if (status === 'error') {
+    el.textContent = '⚠ SAVE FAILED — check connection';
+    el.style.color = '#ef4444';
+    el.style.opacity = '1';
+    // Keep error visible for 12 seconds so they notice it
+    el._fadeTimer = setTimeout(() => { el.style.opacity = '0'; el.textContent = '⟳ SYNCED'; el.style.color = '#6aaa6e'; }, 12000);
+  } else {
+    el.textContent = '⟳ SYNCED';
+    el.style.color = '#6aaa6e';
+    el.style.opacity = '1';
+    el._fadeTimer = setTimeout(() => { el.style.opacity = '0'; }, 2500);
+  }
 }
 
 // ══════════ INIT ══════════
@@ -2082,6 +2136,7 @@ function openAddOrder(orderId) {
   }
   modal.style.display = 'flex';
   updateOrderLiveTotal();
+  refreshAutocompleteLists();
 }
 
 function closeAddOrder() {
@@ -2225,6 +2280,22 @@ function attachOrderListeners() {
     el.addEventListener('input', updateOrderLiveTotal);
     el.addEventListener('focus', function() { this.select(); });
   });
+}
+
+// Populate dept/desc datalists from all saved orders across all incidents
+function refreshAutocompleteLists() {
+  const depts = new Set();
+  const descs = new Set();
+  state._incidents.forEach(inc => {
+    (inc.orders || []).forEach(ord => {
+      if (ord.dept) depts.add(ord.dept.trim());
+      if (ord.desc) descs.add(ord.desc.trim());
+    });
+  });
+  const deptList = document.getElementById('dept-suggestions');
+  const descList = document.getElementById('desc-suggestions');
+  if (deptList) deptList.innerHTML = [...depts].sort().map(v => `<option value="${v.replace(/"/g,'&quot;')}">`).join('');
+  if (descList) descList.innerHTML = [...descs].sort().map(v => `<option value="${v.replace(/"/g,'&quot;')}">`).join('');
 }
 
 // ══════════ PLOT GRID ══════════
