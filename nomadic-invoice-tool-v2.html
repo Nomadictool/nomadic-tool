@@ -720,23 +720,6 @@ body {
         </div>
       </div>
 
-      <div class="section-label">Incident Location &amp; Per Diem</div>
-      <div class="form-grid" style="margin-bottom:10px">
-        <div class="form-group">
-          <label>Incident City</label>
-          <input type="text" id="setup-city" placeholder="e.g. Redding" style="text-transform:capitalize">
-        </div>
-        <div class="form-group">
-          <label>State (2-letter code)</label>
-          <input type="text" id="setup-state" placeholder="e.g. CA" maxlength="2" style="text-transform:uppercase">
-        </div>
-      </div>
-      <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
-        <button type="button" class="btn btn-outline btn-sm" onclick="lookupPerDiem()">🔍 Look Up GSA Per Diem Rates</button>
-        <span id="perdiem-status" style="font-size:12px;color:var(--gray-500)"></span>
-      </div>
-      <div id="perdiem-rates-display" style="display:none;background:var(--off-white);border:1px solid var(--gray-200);border-radius:var(--radius);padding:10px 14px;font-size:13px;margin-bottom:14px;line-height:1.6"></div>
-
       <div class="section-label">Staff Members</div>
       <div id="staff-names-list" style="margin-bottom:8px"></div>
       <button type="button" class="btn btn-outline btn-sm" onclick="addStaffRow()">+ Add Staff Member</button>
@@ -750,6 +733,26 @@ body {
       <div id="setup-add-staff-row" style="display:none;margin-top:12px">
         <div id="add-staff-list"></div>
         <button type="button" class="btn btn-outline btn-sm" onclick="addAdditionalStaffRow()" style="margin-top:8px">+ Add Additional Staff Member</button>
+      </div>
+
+      <div style="margin-top:20px">
+        <div class="toggle-row">
+          <label class="toggle"><input type="checkbox" id="setup-perdiem-toggle" onchange="togglePerDiemSetup()"><span class="toggle-slider"></span></label>
+          <span class="toggle-label" style="font-weight:600">Per Diem</span>
+        </div>
+      </div>
+      <div id="setup-perdiem-row" style="display:none;margin-top:12px">
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Meals Rate ($/day)</label>
+            <input type="number" id="setup-perdiem-meals" step="0.01" min="0" placeholder="e.g. 74.00">
+          </div>
+          <div class="form-group">
+            <label>Lodging Rate ($/night)</label>
+            <input type="number" id="setup-perdiem-lodging" step="0.01" min="0" placeholder="e.g. 157.00">
+          </div>
+        </div>
+        <div style="font-size:12px;color:var(--gray-500);margin-top:4px">Leave a field at 0 or blank if not claiming that expense. Checked daily on the log.</div>
       </div>
     </div>
     <div class="modal-footer">
@@ -858,7 +861,7 @@ body {
       <div class="total-amount" id="day-total-display">$0.00</div>
     </div>
 
-    <!-- Per Diem section (admin-only, only shown when incident has GSA rates) -->
+    <!-- Per Diem section (admin-only, shown when per diem is enabled on incident) -->
     <div id="perdiem-section" style="display:none"></div>
 
   </div>
@@ -1760,80 +1763,28 @@ function onAgencyChange() {
   }
 }
 
-// ══════════ GSA PER DIEM LOOKUP ══════════
-async function lookupPerDiem() {
-  const city = (document.getElementById('setup-city').value || '').trim();
-  const st   = (document.getElementById('setup-state').value || '').trim().toUpperCase();
-  const statusEl = document.getElementById('perdiem-status');
-  const ratesEl  = document.getElementById('perdiem-rates-display');
-  if (!city || st.length < 2) {
-    statusEl.textContent = '⚠️ Enter city and 2-letter state first.';
-    return;
-  }
-  statusEl.textContent = '⏳ Looking up…';
-  ratesEl.style.display = 'none';
-  try {
-    const year = new Date().getFullYear();
-    const url = `https://api.gsa.gov/travel/perdiem/v2/rates/city/${encodeURIComponent(city)}/state/${encodeURIComponent(st)}/year/${year}`;
-    const resp = await fetch(url);
-    if (!resp.ok) throw new Error('HTTP ' + resp.status);
-    const data = await resp.json();
-    const rate = data?.rates?.[0]?.rate?.[0];
-    if (!rate) {
-      statusEl.textContent = '⚠️ No rates found — check city/state spelling.';
-      return;
-    }
-    // Lodging varies by month; pick the current month or "standard"
-    const monthKeys = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
-    const mk = monthKeys[new Date().getMonth()];
-    const lodging = rate.months?.[mk]?.value ?? rate.months?.standard?.value ?? 0;
-    window._pendingPerDiem = {
-      mie:         rate.meals         || 0,
-      lodging:     Number(lodging)    || 0,
-      breakfast:   rate.breakfast     || 0,
-      lunch:       rate.lunch         || 0,
-      dinner:      rate.dinner        || 0,
-      incidentals: rate.incidentals   || 0,
-    };
-    statusEl.textContent = '✓ Rates loaded — save the incident to store them.';
-    ratesEl.style.display = 'block';
-    ratesEl.innerHTML =
-      `<strong>${city}, ${st} (${year})</strong><br>` +
-      `M&IE: <strong>$${window._pendingPerDiem.mie}/day</strong> &nbsp;·&nbsp; ` +
-      `Lodging: <strong>$${window._pendingPerDiem.lodging}/night</strong><br>` +
-      `<span style="color:var(--gray-500)">Breakfast $${window._pendingPerDiem.breakfast} &nbsp;·&nbsp; ` +
-      `Lunch $${window._pendingPerDiem.lunch} &nbsp;·&nbsp; ` +
-      `Dinner $${window._pendingPerDiem.dinner} &nbsp;·&nbsp; ` +
-      `Incidentals $${window._pendingPerDiem.incidentals}</span>`;
-  } catch(err) {
-    statusEl.textContent = '❌ Lookup failed — check connection or try again.';
-    console.error('[Nomadic] GSA lookup error:', err);
-  }
+// ══════════ PER DIEM ══════════
+function togglePerDiemSetup() {
+  const show = document.getElementById('setup-perdiem-toggle').checked;
+  document.getElementById('setup-perdiem-row').style.display = show ? 'block' : 'none';
 }
 
 // Compute the per diem claim for a given date
 function calcPerDiemForDate(date) {
   const inc = state.incident;
-  if (!inc?.perDiemRates) return { mie: 0, lodging: 0, total: 0 };
-  const r   = inc.perDiemRates;
+  if (!inc?.perDiemEnabled) return { meals: 0, lodging: 0, total: 0 };
   const day = (state.perDiem || {})[date] || {};
-  const mieDeduction =
-    (day.bkfstProvided  ? (r.breakfast     || 0) : 0) +
-    (day.lunchProvided  ? (r.lunch         || 0) : 0) +
-    (day.dinnerProvided ? (r.dinner        || 0) : 0);
-  const mie     = Math.max(0, (r.mie || 0) - mieDeduction);
-  const lodging = day.lodgingClaimed ? (r.lodging || 0) : 0;
-  return { mie, lodging, total: mie + lodging };
+  const meals   = day.meals   ? (inc.perDiemMealsRate   || 0) : 0;
+  const lodging = day.lodging ? (inc.perDiemLodgingRate || 0) : 0;
+  return { meals, lodging, total: meals + lodging };
 }
 
-// Save per diem selections for the current date
+// Save per diem checkbox state for a specific date
 function savePerDiem(date) {
   const pd = Object.assign({}, state.perDiem);
   pd[date] = {
-    bkfstProvided:  document.getElementById('pd-bkfst')?.checked  || false,
-    lunchProvided:  document.getElementById('pd-lunch')?.checked  || false,
-    dinnerProvided: document.getElementById('pd-dinner')?.checked || false,
-    lodgingClaimed: document.getElementById('pd-lodging')?.checked || false,
+    meals:   document.getElementById('pd-meals')?.checked   || false,
+    lodging: document.getElementById('pd-lodging')?.checked || false,
   };
   state.perDiem = pd;
   saveState();
@@ -1841,54 +1792,43 @@ function savePerDiem(date) {
   updateDayTotalBox(date);
 }
 
-// Render the per diem card in the daily log
+// Render the per diem card on the daily log (admin only)
 function renderPerDiemSection(date) {
   const container = document.getElementById('perdiem-section');
   if (!container) return;
   const inc = state.incident;
-  if (!inc?.perDiemRates || !state.adminUnlocked) { container.style.display = 'none'; return; }
+  if (!inc?.perDiemEnabled || !state.adminUnlocked) { container.style.display = 'none'; return; }
   container.style.display = 'block';
-  const r   = inc.perDiemRates;
-  const day = (state.perDiem || {})[date] || {};
+  const day   = (state.perDiem || {})[date] || {};
   const claim = calcPerDiemForDate(date);
+  const hasMeals   = (inc.perDiemMealsRate   || 0) > 0;
+  const hasLodging = (inc.perDiemLodgingRate || 0) > 0;
   container.innerHTML = `
     <div class="card mt-16">
       <div class="card-header">
-        <div class="card-title">Per Diem — ${inc.city || ''}${inc.incState ? ', '+inc.incState : ''}</div>
-        <div style="font-size:12px;color:var(--gray-500)">GSA rates · ${date}</div>
+        <div class="card-title">Per Diem</div>
+        <div style="font-size:12px;color:var(--gray-500)">${formatDate(date)}</div>
       </div>
       <div style="padding:16px 20px">
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px 24px;margin-bottom:14px">
-          <div style="font-size:13px">
-            <div style="font-weight:600;margin-bottom:6px;color:var(--navy)">Meals provided by government today?</div>
-            <label style="display:flex;align-items:center;gap:8px;margin-bottom:4px;cursor:pointer">
-              <input type="checkbox" id="pd-bkfst" onchange="savePerDiem('${date}')" ${day.bkfstProvided?'checked':''}>
-              <span>Breakfast (deduct $${r.breakfast})</span>
-            </label>
-            <label style="display:flex;align-items:center;gap:8px;margin-bottom:4px;cursor:pointer">
-              <input type="checkbox" id="pd-lunch" onchange="savePerDiem('${date}')" ${day.lunchProvided?'checked':''}>
-              <span>Lunch (deduct $${r.lunch})</span>
-            </label>
-            <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-              <input type="checkbox" id="pd-dinner" onchange="savePerDiem('${date}')" ${day.dinnerProvided?'checked':''}>
-              <span>Dinner (deduct $${r.dinner})</span>
-            </label>
-          </div>
-          <div style="font-size:13px">
-            <div style="font-weight:600;margin-bottom:6px;color:var(--navy)">Lodging</div>
-            <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-              <input type="checkbox" id="pd-lodging" onchange="savePerDiem('${date}')" ${day.lodgingClaimed?'checked':''}>
-              <span>Claim lodging tonight ($${r.lodging}/night)</span>
-            </label>
-          </div>
+        <div style="display:flex;gap:28px;flex-wrap:wrap;margin-bottom:${claim.total > 0 ? '14px' : '0'}">
+          ${hasMeals ? `
+          <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:14px">
+            <input type="checkbox" id="pd-meals" onchange="savePerDiem('${date}')" ${day.meals ? 'checked' : ''}
+              style="width:18px;height:18px;accent-color:var(--forest);cursor:pointer">
+            <span>Meals — <strong>$${(inc.perDiemMealsRate || 0).toFixed(2)}/day</strong></span>
+          </label>` : ''}
+          ${hasLodging ? `
+          <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:14px">
+            <input type="checkbox" id="pd-lodging" onchange="savePerDiem('${date}')" ${day.lodging ? 'checked' : ''}
+              style="width:18px;height:18px;accent-color:var(--forest);cursor:pointer">
+            <span>Lodging — <strong>$${(inc.perDiemLodgingRate || 0).toFixed(2)}/night</strong></span>
+          </label>` : ''}
         </div>
+        ${claim.total > 0 ? `
         <div style="background:var(--navy);border-radius:var(--radius-lg);padding:10px 16px;display:flex;justify-content:space-between;align-items:center">
-          <div>
-            <div style="font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--gray-400)">Per Diem Claim</div>
-            <div style="font-size:12px;color:var(--gray-500);margin-top:2px">M&IE: $${claim.mie}${claim.lodging ? ' + Lodging: $'+claim.lodging : ''}</div>
-          </div>
+          <div style="font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--gray-400)">Per Diem Today</div>
           <div style="font-family:'IBM Plex Mono',monospace;font-size:20px;font-weight:500;color:var(--amber)">$${claim.total.toFixed(2)}</div>
-        </div>
+        </div>` : ''}
       </div>
     </div>`;
 }
@@ -1898,12 +1838,10 @@ function populateSetupDefaults() {
   document.getElementById('setup-service-type').value = 'clerical';
   document.getElementById('setup-unit').value = '';
   document.getElementById('setup-day-rate').value = DEFAULT_RATES.standard.dayRate;
-  document.getElementById('setup-city').value = '';
-  document.getElementById('setup-state').value = '';
-  document.getElementById('perdiem-status').textContent = '';
-  document.getElementById('perdiem-rates-display').style.display = 'none';
-  document.getElementById('perdiem-rates-display').innerHTML = '';
-  window._pendingPerDiem = null;
+  document.getElementById('setup-perdiem-toggle').checked = false;
+  document.getElementById('setup-perdiem-row').style.display = 'none';
+  document.getElementById('setup-perdiem-meals').value = '';
+  document.getElementById('setup-perdiem-lodging').value = '';
 }
 
 // ══════════ SETUP ══════════
@@ -1969,14 +1907,11 @@ function saveSetup() {
 
   if (!name || !eNumber) { alert('Please enter incident name and resource number.'); return; }
 
-  const city = (document.getElementById('setup-city').value || '').trim();
-  const incState = (document.getElementById('setup-state').value || '').trim().toUpperCase();
-  // Preserve existing perDiemRates if a new lookup wasn't done this session
-  const existing2 = state._incidents.find(i => i.id === state._activeId);
-  const perDiemRates = window._pendingPerDiem || (existing2?.incident?.perDiemRates) || null;
-  window._pendingPerDiem = null; // clear after use
+  const perDiemEnabled     = document.getElementById('setup-perdiem-toggle').checked;
+  const perDiemMealsRate   = parseFloat(document.getElementById('setup-perdiem-meals').value)   || 0;
+  const perDiemLodgingRate = parseFloat(document.getElementById('setup-perdiem-lodging').value) || 0;
 
-  const incData = { name, eNumber, agency, startDate, dayRate, serviceType, unit, staffNames, addStaff, additionalStaff, city, incState, perDiemRates };
+  const incData = { name, eNumber, agency, startDate, dayRate, serviceType, unit, staffNames, addStaff, additionalStaff, perDiemEnabled, perDiemMealsRate, perDiemLodgingRate };
   const existing = state._incidents.find(i => i.id === state._activeId);
   if (existing) {
     existing.incident = incData;
@@ -2009,19 +1944,11 @@ function showSetup() {
     document.getElementById('add-staff-list').innerHTML = '';
     (inc.additionalStaff || []).forEach(s => addAdditionalStaffRow(s.name, s.rate));
     toggleAddStaffSetup();
-    // Repopulate location/per diem
-    document.getElementById('setup-city').value = inc.city || '';
-    document.getElementById('setup-state').value = inc.incState || '';
-    if (inc.perDiemRates) {
-      const r = inc.perDiemRates;
-      document.getElementById('perdiem-status').textContent = '✓ Rates saved';
-      document.getElementById('perdiem-rates-display').style.display = 'block';
-      document.getElementById('perdiem-rates-display').innerHTML = `<strong>${inc.city}, ${inc.incState}</strong> — M&IE: $${r.mie}/day · Lodging: $${r.lodging}/night · Breakfast: $${r.breakfast} · Lunch: $${r.lunch} · Dinner: $${r.dinner} · Incidentals: $${r.incidentals}`;
-    } else {
-      document.getElementById('perdiem-status').textContent = '';
-      document.getElementById('perdiem-rates-display').style.display = 'none';
-      document.getElementById('perdiem-rates-display').innerHTML = '';
-    }
+    // Repopulate per diem
+    document.getElementById('setup-perdiem-toggle').checked = inc.perDiemEnabled || false;
+    document.getElementById('setup-perdiem-meals').value   = inc.perDiemMealsRate   || '';
+    document.getElementById('setup-perdiem-lodging').value = inc.perDiemLodgingRate || '';
+    togglePerDiemSetup();
   }
   setSetupModalMode(!!state.incident);
   document.getElementById('setup-modal').style.display = 'flex';
@@ -2545,9 +2472,9 @@ function renderInvoice() {
             <td class="inv-money">$${l.subtotal.toFixed(2)}</td>
           </tr>`).join('')}
           ${pdClaim.total > 0 ? `
-            <tr class="rate-row"><td colspan="5" style="font-weight:600;color:var(--navy);padding-top:10px">Per Diem (GSA — ${inc.city || ''}${inc.incState ? ', '+inc.incState : ''})</td></tr>
-            ${pdClaim.mie > 0 ? `<tr class="rate-row"><td>M&amp;IE</td><td>1</td><td>day</td><td class="inv-money">$${pdClaim.mie.toFixed(2)}</td><td class="inv-money">$${pdClaim.mie.toFixed(2)}</td></tr>` : ''}
-            ${pdClaim.lodging > 0 ? `<tr class="rate-row"><td>Lodging</td><td>1</td><td>night</td><td class="inv-money">$${pdClaim.lodging.toFixed(2)}</td><td class="inv-money">$${pdClaim.lodging.toFixed(2)}</td></tr>` : ''}
+            <tr class="rate-row"><td colspan="5" style="font-weight:600;color:var(--navy);padding-top:10px">Per Diem</td></tr>
+            ${pdClaim.meals > 0 ? `<tr class="rate-row"><td>Meals Per Diem</td><td>1</td><td>day</td><td class="inv-money">$${pdClaim.meals.toFixed(2)}</td><td class="inv-money">$${pdClaim.meals.toFixed(2)}</td></tr>` : ''}
+            ${pdClaim.lodging > 0 ? `<tr class="rate-row"><td>Lodging Per Diem</td><td>1</td><td>night</td><td class="inv-money">$${pdClaim.lodging.toFixed(2)}</td><td class="inv-money">$${pdClaim.lodging.toFixed(2)}</td></tr>` : ''}
           ` : ''}
         </tbody>
         <tfoot>
