@@ -1809,7 +1809,7 @@ function renderPerDiemSection(date) {
   const container = document.getElementById('perdiem-section');
   if (!container) return;
   const inc = state.incident;
-  if (!inc?.perDiemEnabled || !state.adminUnlocked) { container.style.display = 'none'; return; }
+  if (!inc?.perDiemEnabled) { container.style.display = 'none'; return; }
   container.style.display = 'block';
   const day        = (state.perDiem || {})[date] || {};
   const claim      = calcPerDiemForDate(date);
