@@ -838,11 +838,7 @@ body {
             <tr>
               <th>#</th>
               <th>Dept / Description</th>
-              <th>B&amp;W</th>
-              <th>Color</th>
-              <th>Scans</th>
-              <th>Finishing</th>
-              <th>Plots</th>
+              <th>Services</th>
               <th></th>
             </tr>
           </thead>
@@ -2292,21 +2288,28 @@ document.getElementById('daily-subtitle').textContent = `${inc.name} · ${inc.eN
     table.style.display = 'table'; empty.style.display = 'none';
     tbody.innerHTML = todayOrders.map((ord, i) => {
       const q = ord.quantities;
-      const bw = (q.bw85||0) + (q.bw11||0);
-      const col = (q.color85||0) + (q.color11||0);
-      const fin = (q.lam85||0) + (q.lam11||0) + (q.bind||0);
-      const legal = (q.legal||0);
-      const custom = (ord.customItems||[]).filter(c => c.desc).length;
-      const plots = ord.plot ? `${ord.plot.qty||1}× ${ord.plot.type}` : '';
-      const extras = [legal ? legal+' Legal' : '', custom ? custom+' custom' : ''].filter(Boolean).join(', ');
+      const svc = [];
+      if (q.bw85)    svc.push(`${q.bw85} 8.5×11 B&W`);
+      if (q.color85) svc.push(`${q.color85} 8.5×11 Color`);
+      if (q.lam85)   svc.push(`${q.lam85} 8.5×11 Lam`);
+      if (q.bw11)    svc.push(`${q.bw11} 11×17 B&W`);
+      if (q.color11) svc.push(`${q.color11} 11×17 Color`);
+      if (q.lam11)   svc.push(`${q.lam11} 11×17 Lam`);
+      if (q.legal)   svc.push(`${q.legal} Legal`);
+      if (q.scans)   svc.push(`${q.scans} Scan${q.scans!==1?'s':''}`);
+      if (q.bind)    svc.push(`${q.bind} Binding`);
+      if (q.cpbw)    svc.push(`${q.cpbw} Clr Paper B&W`);
+      if (q.cpc)     svc.push(`${q.cpc} Clr Paper Color`);
+      if (q.bwcs)    svc.push(`${q.bwcs} B&W Card Stock`);
+      if (q.colorcs) svc.push(`${q.colorcs} Color Card Stock`);
+      if (q.fax)     svc.push(`${q.fax} Fax`);
+      if (q.internet)svc.push(`${q.internet} Internet`);
+      if (ord.plot)  svc.push(`${ord.plot.qty||1} ${ord.plot.type} Map`);
+      (ord.customItems||[]).forEach(c => { if (c.desc) svc.push(`${c.qty||1} ${c.desc}`); });
       return `<tr>
         <td class="text-muted text-mono">${i+1}</td>
         <td><strong>${ord.dept||'—'}</strong><br><span class="text-sm text-muted">${ord.desc||''}</span></td>
-        <td class="text-sm">${bw ? bw+'pp' : '—'}</td>
-        <td class="text-sm">${col ? col+'pp' : '—'}</td>
-        <td class="text-sm">${(q.scans||0) ? q.scans : '—'}</td>
-        <td class="text-sm">${fin ? fin+' items' : '—'}</td>
-        <td class="text-sm">${[plots, extras].filter(Boolean).join(' / ')||'—'}</td>
+        <td class="text-sm" style="color:var(--gray-700)">${svc.join(', ') || '—'}</td>
         <td><div style="display:flex;gap:4px">
           <button class="btn btn-outline btn-sm" onclick="openAddOrder('${ord.id}')">Edit</button>
           <button class="btn btn-danger btn-sm" onclick="deleteOrder('${ord.id}')">✕</button>
