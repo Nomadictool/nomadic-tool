@@ -926,6 +926,19 @@ body {
           <span id="api-key-status" style="font-size:12px;color:var(--gray-500)"></span>
         </div>
       </div>
+      <div class="card" style="margin-top:20px;padding:20px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+          <h3 style="font-size:14px;font-weight:700;margin:0">
+            Error Log
+            <span id="error-log-badge" style="background:#ef4444;color:#fff;border-radius:10px;padding:1px 8px;font-size:11px;font-weight:700;margin-left:6px;vertical-align:middle;display:none">0</span>
+          </h3>
+          <button class="btn btn-outline btn-sm" onclick="clearErrorLog()" style="font-size:12px">Clear All</button>
+        </div>
+        <p style="font-size:12px;color:var(--gray-500);margin-bottom:12px">Automatic log of JavaScript errors and unhandled promise rejections. Errors from this device are stored locally; they are also synced to Supabase so you can see errors from all field devices.</p>
+        <div id="error-log-entries" style="max-height:280px;overflow-y:auto;font-size:12px">
+          <div style="color:var(--gray-400);font-size:13px;padding:8px 0">No errors logged yet.</div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -1568,6 +1581,94 @@ const _sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 // handler can tell whether incoming data is newer than what we already have.
 let _lastSuccessfulSaveTs = null;
 
+// ══════════ ERROR LOGGER ══════════
+const MAX_ERROR_LOG = 50;
+
+function logError(source, msg, file, line, col, stack) {
+  const entry = {
+    ts: new Date().toISOString(),
+    source: source,
+    msg: String(msg).slice(0, 300),
+    loc: String(file || '').replace(/.*[\/\\]/, '') + (line ? ':' + line : ''),
+    stack: String(stack || '').slice(0, 600)
+  };
+  // Store locally
+  try {
+    const raw = localStorage.getItem('nomadic_error_log');
+    const log = raw ? JSON.parse(raw) : [];
+    log.unshift(entry);
+    if (log.length > MAX_ERROR_LOG) log.length = MAX_ERROR_LOG;
+    localStorage.setItem('nomadic_error_log', JSON.stringify(log));
+  } catch(e) { /* can't log the logger */ }
+  updateErrorBadge();
+  // Best-effort push to Supabase so admin can see errors from all devices
+  try {
+    _sb.from('app_config').select('value').eq('key','error_log').maybeSingle().then(function(res) {
+      const existing = (res.data && Array.isArray(res.data.value)) ? res.data.value : [];
+      existing.unshift(entry);
+      if (existing.length > MAX_ERROR_LOG) existing.length = MAX_ERROR_LOG;
+      _sb.from('app_config').upsert({ key: 'error_log', value: existing });
+    }).catch(function() {});
+  } catch(e) {}
+}
+
+function updateErrorBadge() {
+  try {
+    const raw = localStorage.getItem('nomadic_error_log');
+    const count = raw ? JSON.parse(raw).length : 0;
+    const badge = document.getElementById('error-log-badge');
+    if (badge) {
+      badge.textContent = count;
+      badge.style.display = count ? 'inline-block' : 'none';
+    }
+  } catch(e) {}
+}
+
+function renderErrorLog() {
+  const container = document.getElementById('error-log-entries');
+  if (!container) return;
+  try {
+    const raw = localStorage.getItem('nomadic_error_log');
+    const log = raw ? JSON.parse(raw) : [];
+    if (!log.length) {
+      container.innerHTML = '<div style="color:var(--gray-400);font-size:13px;padding:8px 0">No errors logged. &#127881;</div>';
+      return;
+    }
+    container.innerHTML = log.map(function(e) {
+      const srcColor = e.source === 'promise' ? '#78350f' : '#991b1b';
+      const srcBg    = e.source === 'promise' ? '#fef3c7' : '#fee2e2';
+      return '<div style="padding:8px 0;border-bottom:1px solid var(--gray-100)">' +
+        '<div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap">' +
+        '<span style="font-family:\'IBM Plex Mono\',monospace;color:var(--gray-400);font-size:11px;white-space:nowrap">' + e.ts.slice(0,19).replace('T',' ') + '</span>' +
+        '<span style="background:' + srcBg + ';color:' + srcColor + ';padding:0 5px;border-radius:3px;font-size:10px;font-weight:700;text-transform:uppercase">' + e.source + '</span>' +
+        '<span style="font-weight:600;color:var(--navy);font-size:12px;word-break:break-word">' + escHtml(e.msg) + '</span>' +
+        '</div>' +
+        (e.loc ? '<div style="color:var(--gray-500);font-family:\'IBM Plex Mono\',monospace;font-size:11px;margin-top:2px">' + escHtml(e.loc) + '</div>' : '') +
+        '</div>';
+    }).join('');
+  } catch(e) {
+    container.innerHTML = '<div style="color:var(--gray-500);font-size:12px">Error reading log.</div>';
+  }
+}
+
+function clearErrorLog() {
+  localStorage.removeItem('nomadic_error_log');
+  try { _sb.from('app_config').upsert({ key: 'error_log', value: [] }); } catch(e) {}
+  updateErrorBadge();
+  renderErrorLog();
+}
+
+// Catch all unhandled JS errors
+window.onerror = function(msg, src, line, col, err) {
+  logError('uncaught', msg, src, line, col, err ? err.stack : '');
+  return false; // don't suppress native error reporting
+};
+// Catch unhandled promise rejections
+window.onunhandledrejection = function(e) {
+  const r = e.reason;
+  logError('promise', r instanceof Error ? r.message : String(r), '', '', '', r instanceof Error ? r.stack : '');
+};
+
 // Push all in-memory incidents and rates to Supabase (called by saveState)
 async function persistToSupabase() {
   const saveTs = new Date().toISOString();
@@ -1611,7 +1712,7 @@ async function loadFromSupabase() {
     if (backupRaw && backupTs && backupTs > supabaseTs) {
       // Local backup is newer — Supabase missed some saves, recover from backup
       console.warn('[Nomadic] Local backup is newer than Supabase — recovering from backup');
-      state._incidents = JSON.parse(backupRaw);
+      try { state._incidents = JSON.parse(backupRaw); } catch(parseErr) { console.warn('[Nomadic] Backup parse failed, discarding:', parseErr); }
       // Push the recovered data back up to Supabase immediately
       persistToSupabase();
     } else {
@@ -1622,7 +1723,7 @@ async function loadFromSupabase() {
     const backupRaw = localStorage.getItem('nomadic_local_backup');
     if (backupRaw) {
       console.warn('[Nomadic] Supabase empty — recovering from local backup');
-      state._incidents = JSON.parse(backupRaw);
+      try { state._incidents = JSON.parse(backupRaw); } catch(parseErr) { console.warn('[Nomadic] Backup parse failed, discarding:', parseErr); }
       persistToSupabase();
     }
   }
@@ -1636,7 +1737,8 @@ async function loadFromSupabase() {
 async function migrateLocalToSupabase() {
   const localRaw = localStorage.getItem('nomadic_incidents');
   if (!localRaw) return;
-  const localIncs = JSON.parse(localRaw);
+  let localIncs;
+  try { localIncs = JSON.parse(localRaw); } catch(e) { console.warn('[Nomadic] Migration parse failed:', e); return; }
   if (!localIncs || localIncs.length === 0) return;
 
   const { data: existing } = await _sb.from('incidents').select('id').limit(1);
@@ -1645,7 +1747,7 @@ async function migrateLocalToSupabase() {
   console.log('[Nomadic] Migrating local data to Supabase...');
   state._incidents = localIncs;
   const localRates = localStorage.getItem('nomadic_rates');
-  if (localRates) state.rates = JSON.parse(localRates);
+  if (localRates) { try { state.rates = JSON.parse(localRates); } catch(e) {} }
   await persistToSupabase();
 
   // Also handle legacy single-incident format
@@ -1737,12 +1839,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     console.error('[Nomadic] Supabase init failed, falling back to local data:', err);
     // Graceful fallback: try localStorage
     const localRaw = localStorage.getItem('nomadic_incidents');
-    if (localRaw) state._incidents = JSON.parse(localRaw);
+    if (localRaw) { try { state._incidents = JSON.parse(localRaw); } catch(e) { console.warn('[Nomadic] Fallback parse failed:', e); } }
     const localRates = localStorage.getItem('nomadic_rates');
-    if (localRates) state.rates = JSON.parse(localRates);
+    if (localRates) { try { state.rates = JSON.parse(localRates); } catch(e) {} }
   }
 
   document.getElementById('loading-overlay').style.display = 'none';
+  updateErrorBadge(); // reflect any pre-existing errors in admin badge
 
   // Restore which incident this session was last on (if it still exists)
   const savedId = localStorage.getItem('nomadic_active_id');
@@ -2205,7 +2308,8 @@ function deleteOrder(id) {
 // ══════════ RATES HELPERS ══════════
 function getRates(agency) {
   const ag = agency || state.incident?.agency || 'federal';
-  return ag === 'calfire' ? state.rates.calfire : state.rates.standard;
+  const rates = ag === 'calfire' ? state.rates.calfire : state.rates.standard;
+  return rates || (ag === 'calfire' ? DEFAULT_RATES.calfire : DEFAULT_RATES.standard);
 }
 
 function calcOrderTotal(order, agency) {
@@ -2399,7 +2503,7 @@ function updateDayTotalBox(date) {
   const r = getRates();
   const todayOrders = state.orders.filter(o => o.date === date);
   const orderTotal = todayOrders.reduce((sum, o) => sum + calcOrderTotal(o), 0);
-  const staffTotal = inc.dayRate; // flat day rate for the equipment/unit
+  const staffTotal = inc.dayRate || 0; // flat day rate for the equipment/unit
   const addStaffTotal = inc.addStaff ? (inc.additionalStaff || []).reduce((sum, s) => sum + (s.rate || 0), 0) : 0;
   const perDiemTotal = calcPerDiemForDate(date).total;
   const grand = orderTotal + staffTotal + addStaffTotal + perDiemTotal;
@@ -2499,7 +2603,7 @@ function renderInvoice() {
   if (totals.plot_sf) addLine('Custom Lamination (Sq Ft)', totals.plot_sf, r.custLam, 'sq ft');
 
   const serviceTotal = lines.reduce((s, l) => s + l.subtotal, 0);
-  const staffTotal = inc.dayRate; // flat day rate for the equipment/unit
+  const staffTotal = inc.dayRate || 0; // flat day rate for the equipment/unit
   const addStaffTotal = inc.addStaff ? (inc.additionalStaff || []).reduce((sum, s) => sum + (s.rate || 0), 0) : 0;
   const pdClaim = calcPerDiemForDate(date);
   const grand = serviceTotal + staffTotal + addStaffTotal + pdClaim.total;
@@ -2549,7 +2653,7 @@ function renderInvoice() {
           <tr class="rate-row">
             <td><strong>${getServiceLabel(inc)}${inc.unit ? ' — ' + inc.unit : ''}</strong>${(inc.staffNames||[]).length > 0 ? '<br><span style="font-size:11px;color:var(--gray-600)">'+((inc.staffNames||[]).join(' &nbsp;|&nbsp; '))+'</span>' : ''}</td>
             <td>1</td><td>day</td>
-            <td class="inv-money">$${inc.dayRate.toFixed(2)}</td>
+            <td class="inv-money">$${(inc.dayRate||0).toFixed(2)}</td>
             <td class="inv-money">$${staffTotal.toFixed(2)}</td>
           </tr>
           ${inc.addStaff ? (inc.additionalStaff||[]).map(s => `<tr class="rate-row">
@@ -2983,7 +3087,7 @@ function summarizeOrder(ord) {
   const lam = (q.lam85||0)+(q.lam11||0); if(lam) parts.push(lam+' Lam');
   if(q.scans) parts.push(q.scans+' Scans');
   if(q.bind) parts.push(q.bind+' Binding');
-  if(ord.plot) parts.push(ord.plot.qty+'× '+ord.plot.type);
+  if(ord.plot) parts.push((ord.plot.qty||1)+'× '+ord.plot.type);
   return parts.join(', ') || '—';
 }
 
@@ -3068,6 +3172,7 @@ function renderRatesAdmin() {
 
   grid.innerHTML = makePanel('Forest Service / Federal Rates', standardItems, 'standard') +
                    makePanel('CalFire Rates', calfireItems, 'calfire');
+  renderErrorLog();
 }
 
 function updateRate(rateKey, field, value) {
@@ -3090,6 +3195,7 @@ function approveDay() {
   const date = document.getElementById('daily-date').value;
   const entry = state._incidents.find(i => i.id === state._activeId);
   if (!entry) return;
+  if (!entry.approvedDates) entry.approvedDates = [];
   const idx = entry.approvedDates.indexOf(date);
   if (idx >= 0) entry.approvedDates.splice(idx, 1);
   else          entry.approvedDates.push(date);
@@ -3138,9 +3244,9 @@ function renderIncidentManager() {
 
   const renderRow = (entry, isArchived) => {
     const inc = entry.incident;
-    const billingDays = new Set([...entry.orders.map(o => o.date), ...(entry.approvedDates||[])]);
+    const billingDays = new Set([...(entry.orders||[]).map(o => o.date), ...(entry.approvedDates||[])]);
     const days = billingDays.size;
-    const serviceTotal = entry.orders.reduce((s, o) => s + calcOrderTotal(o, inc.agency), 0);
+    const serviceTotal = (entry.orders||[]).reduce((s, o) => s + calcOrderTotal(o, inc.agency), 0);
     const grand = serviceTotal + days * (inc.dayRate||0) + (inc.addStaff ? days * (inc.additionalStaff||[]).reduce((s,x)=>s+(x.rate||0),0) : 0);
     const isCurrent = entry.id === state._activeId;
     const agLabel = inc.agency === 'calfire' ? 'CAL FIRE' : (inc.agency === 'federal' ? 'US FS' : 'STATE');
@@ -3256,14 +3362,14 @@ function renderSeasonOverview() {
   const rows = state._incidents.map((entry, idx) => {
     const inc = entry.incident;
     const isSimple = isSimpleUnit(inc);
-    const orderDates    = new Set(entry.orders.map(o => o.date));
+    const orderDates    = new Set((entry.orders||[]).map(o => o.date));
     const approvedDates = new Set(entry.approvedDates || []);
     const billingDates  = isSimple
       ? approvedDates
       : new Set([...orderDates, ...approvedDates]);
     const dates = [...billingDates].sort();
     const days  = billingDates.size;
-    const serviceTotal = isSimple ? 0 : entry.orders.reduce((s, o) => s + calcOrderTotal(o, inc.agency), 0);
+    const serviceTotal = isSimple ? 0 : (entry.orders||[]).reduce((s, o) => s + calcOrderTotal(o, inc.agency), 0);
     const staffTotal   = days * (inc.dayRate || 0);
     const addStTotal   = inc.addStaff ? days * (inc.additionalStaff||[]).reduce((s,x)=>s+(x.rate||0),0) : 0;
     const grand = serviceTotal + staffTotal + addStTotal;
@@ -3647,6 +3753,7 @@ function printChecklist(shift) {
   });
   html += '<br><br><button onclick="window.print()">Print</button></body></html>';
   var w = window.open('', '_blank');
+  if (!w) { alert('Pop-ups are blocked. Please allow pop-ups for this page to print.'); return; }
   w.document.write(html);
   w.document.close();
 }
@@ -3680,6 +3787,7 @@ function printHelpGuide() {
   });
   html += '<br><button onclick="window.print()">Print</button></body></html>';
   var w = window.open('', '_blank');
+  if (!w) { alert('Pop-ups are blocked. Please allow pop-ups for this page to print.'); return; }
   w.document.write(html);
   w.document.close();
 }
