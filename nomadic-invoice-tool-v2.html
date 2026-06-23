@@ -777,6 +777,7 @@ body {
     <button class="btn btn-outline btn-sm" onclick="openFireSelector()" id="switch-fire-btn" style="display:none; color:var(--amber); border-color:var(--amber)">⇄ Switch Fire</button>
     <button class="btn btn-outline btn-sm" onclick="openIncidentManager()" id="manage-incidents-btn" style="display:none; color:var(--gray-200); border-color:var(--navy-mid)">⚙ Incidents</button>
     <span id="sync-pulse" style="font-size:11px;color:#6aaa6e;opacity:0;transition:opacity 0.6s;letter-spacing:1px">⟳ SYNCED</span>
+    <span id="last-saved-display" style="font-size:11px;color:var(--gray-400);letter-spacing:0.5px"></span>
   </div>
 </header>
 
@@ -845,6 +846,9 @@ body {
           <tbody id="orders-tbody"></tbody>
 
         </table>
+        <div id="orders-add-bottom" style="display:none;padding:12px 0 4px;text-align:center">
+          <button class="btn btn-primary btn-sm" onclick="openAddOrder()" style="font-size:13px">+ Add Order</button>
+        </div>
       </div>
     </div>
 
@@ -1311,9 +1315,11 @@ body {
       <!-- Plotting section -->
       <div class="section-label">Plotting / Maps</div>
       <div class="plot-guide">
-        <div class="plot-guide-title">Select Plot Type</div>
-        <div class="plot-type-grid" id="plot-type-grid">
-          <!-- rendered by JS -->
+        <div class="form-group" style="margin-bottom:10px">
+          <label>Plot Type</label>
+          <select id="plot-type-select" onchange="selectPlotType(this.value)" style="width:100%">
+            <option value="">— None / no map —</option>
+          </select>
         </div>
         <div id="plot-qty-row" style="display:none;margin-top:10px">
           <div class="form-grid" style="gap:12px">
@@ -1555,6 +1561,7 @@ function todayStr() {
 }
 // Save session-local state (which incident/date the user was on) to localStorage.
 // All incident data + rates are persisted to Supabase instead.
+let _supabaseDebounceTimer = null;
 function saveState() {
   localStorage.setItem('nomadic_active_id', state._activeId || '');
   localStorage.setItem('nomadic_current_date', state.currentDate || todayStr());
@@ -1564,7 +1571,9 @@ function saveState() {
     localStorage.setItem('nomadic_local_backup_ts', new Date().toISOString());
     localStorage.setItem('nomadic_local_rates', JSON.stringify(state.rates));
   } catch(e) { console.warn('localStorage backup failed:', e); }
-  persistToSupabase();
+  // Debounce Supabase writes: wait 5 s of inactivity before pushing
+  clearTimeout(_supabaseDebounceTimer);
+  _supabaseDebounceTimer = setTimeout(persistToSupabase, 5000);
 }
 function loadSessionState() {
   // Restore only lightweight session markers; incident data comes from Supabase
@@ -1804,6 +1813,8 @@ function subscribeRealtime() {
     .subscribe();
 }
 
+let _lastSavedAt = null; // wall-clock time of last successful Supabase save
+
 function showSyncPulse(status) {
   const el = document.getElementById('sync-pulse');
   if (!el) return;
@@ -1812,15 +1823,28 @@ function showSyncPulse(status) {
     el.textContent = '⚠ SAVE FAILED — check connection';
     el.style.color = '#ef4444';
     el.style.opacity = '1';
-    // Keep error visible for 12 seconds so they notice it
     el._fadeTimer = setTimeout(() => { el.style.opacity = '0'; el.textContent = '⟳ SYNCED'; el.style.color = '#6aaa6e'; }, 12000);
   } else {
+    _lastSavedAt = new Date();
     el.textContent = '⟳ SYNCED';
     el.style.color = '#6aaa6e';
     el.style.opacity = '1';
     el._fadeTimer = setTimeout(() => { el.style.opacity = '0'; }, 2500);
+    refreshLastSavedDisplay();
   }
 }
+
+function refreshLastSavedDisplay() {
+  const el = document.getElementById('last-saved-display');
+  if (!el) return;
+  if (!_lastSavedAt) { el.textContent = ''; return; }
+  const mins = Math.round((Date.now() - _lastSavedAt.getTime()) / 60000);
+  if (mins < 1) el.textContent = 'Saved just now';
+  else if (mins === 1) el.textContent = 'Saved 1 min ago';
+  else el.textContent = `Saved ${mins} min ago`;
+}
+// Update the "X min ago" label every 60 seconds
+setInterval(refreshLastSavedDisplay, 60000);
 
 // ══════════ INIT ══════════
 loadSessionState();
@@ -2180,6 +2204,8 @@ function applyIncident() {
   const isSimple = inc.serviceType && inc.serviceType !== 'clerical';
   const addOrderBtn = document.getElementById('add-order-btn');
   if (addOrderBtn) addOrderBtn.style.display = isSimple ? 'none' : '';
+  const addOrderBtnBottom = document.getElementById('orders-add-bottom');
+  if (addOrderBtnBottom && isSimple) addOrderBtnBottom.style.display = 'none';
   const orderNote = document.getElementById('day-rate-only-note');
   if (orderNote) orderNote.style.display = isSimple ? '' : 'none';
 }
@@ -2238,6 +2264,9 @@ function openAddOrder(orderId) {
     resetOrderForm();
   }
   modal.style.display = 'flex';
+  // Always open at the top of the modal
+  const modalBody = modal.querySelector('.modal-body');
+  if (modalBody) modalBody.scrollTop = 0;
   updateOrderLiveTotal();
   refreshAutocompleteLists();
 }
@@ -2256,7 +2285,12 @@ function resetOrderForm() {
     const el = document.getElementById('o-'+k); if (el) el.value = 0;
   });
   document.getElementById('custom-items-list').innerHTML = '';
-  document.querySelectorAll('.plot-type-btn').forEach(b => b.classList.remove('selected'));
+  const plotSel = document.getElementById('plot-type-select');
+  if (plotSel) plotSel.value = '';
+  const plotQty = document.getElementById('o-plot-qty'); if (plotQty) plotQty.value = 1;
+  const customLf = document.getElementById('o-custom-lf'); if (customLf) customLf.value = 0;
+  const customSf = document.getElementById('o-custom-sf'); if (customSf) customSf.value = 0;
+  const customQty = document.getElementById('o-custom-qty'); if (customQty) customQty.value = 1;
   document.getElementById('plot-qty-row').style.display = 'none';
   document.getElementById('plot-custom-row').style.display = 'none';
   document.getElementById('plot-price-preview').textContent = 'Select a plot type to see pricing';
@@ -2408,27 +2442,26 @@ function getPlotTypes() {
 }
 
 function buildPlotGrid() {
-  const grid = document.getElementById('plot-type-grid');
-  if (!grid) return;
+  const sel = document.getElementById('plot-type-select');
+  if (!sel) return;
   const types = getPlotTypes();
-  grid.innerHTML = Object.entries(types).map(([code, info]) => `
-    <button class="plot-type-btn" onclick="selectPlotType('${code}')" id="plot-btn-${code}">
-      <span class="code">${code}</span>
-      <span class="desc">${info.label}</span>
-      <span class="desc" style="color:var(--amber)">${info.custom ? 'custom' : ('$' + info.price.toFixed(0))}</span>
-    </button>
-  `).join('');
+  const currentVal = sel.value;
+  sel.innerHTML = '<option value="">— None / no map —</option>' +
+    Object.entries(types).map(([code, info]) =>
+      `<option value="${code}">${code} — ${info.label}${info.custom ? ' (custom)' : ' · $' + info.price.toFixed(0) + ' · ' + info.lf + ' lin ft' + (info.sf ? ' + ' + info.sf + ' sq ft lam' : '')}</option>`
+    ).join('');
+  if (currentVal) sel.value = currentVal;
 }
 
 function selectPlotType(code) {
-  state.selectedPlotType = code;
-  document.querySelectorAll('.plot-type-btn').forEach(b => b.classList.remove('selected'));
-  const btn = document.getElementById('plot-btn-' + code);
-  if (btn) btn.classList.add('selected');
+  state.selectedPlotType = code || null;
+  // Keep the select element in sync (called programmatically when editing an order)
+  const sel = document.getElementById('plot-type-select');
+  if (sel && code) sel.value = code;
   const types = getPlotTypes();
-  const pt = types[code];
+  const pt = code ? types[code] : null;
   const isCustom = code === 'XLF' || code === 'XSF';
-  document.getElementById('plot-qty-row').style.display = isCustom ? 'none' : 'block';
+  document.getElementById('plot-qty-row').style.display = (code && !isCustom) ? 'block' : 'none';
   document.getElementById('plot-custom-row').style.display = isCustom ? 'block' : 'none';
   if (!isCustom && pt) {
     document.getElementById('plot-price-preview').textContent = `${pt.label} — $${pt.price.toFixed(2)} each (${pt.lf} lin ft${pt.sf ? ', ' + pt.sf + ' sq ft lam' : ''})`;
@@ -2457,10 +2490,13 @@ document.getElementById('daily-subtitle').textContent = `${inc.name} · ${inc.eN
     approveBtn.textContent = approved ? '↩ Un-Approve' : '✓ Approve Day';
   }
 
+  const addBtnBottom = document.getElementById('orders-add-bottom');
   if (todayOrders.length === 0) {
     table.style.display = 'none'; empty.style.display = 'block';
+    if (addBtnBottom) addBtnBottom.style.display = 'none';
   } else {
     table.style.display = 'table'; empty.style.display = 'none';
+    if (addBtnBottom) addBtnBottom.style.display = '';
     tbody.innerHTML = todayOrders.map((ord, i) => {
       const q = ord.quantities;
       const svc = [];
