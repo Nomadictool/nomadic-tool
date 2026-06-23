@@ -2593,14 +2593,19 @@ function renderInvoice() {
     });
   });
 
-  // Plotting lines
+  // Plotting — consolidated to one line: total linear feet × rate/lf
   const plotTypes = getPlotTypes();
+  let totalPlotLf = totals.plot_lf || 0;   // from custom XLF entries
+  let totalPlotSf = totals.plot_sf || 0;   // from custom XSF entries
   Object.entries(plotTypes).forEach(([code, pt]) => {
     const qty = totals['plot_'+code];
-    if (qty && !pt.custom) lines.push({ name: `Plotting — ${pt.label}`, qty, rate: pt.price, unit:'ea', subtotal: qty * pt.price });
+    if (qty && !pt.custom) {
+      totalPlotLf += qty * (pt.lf || 0);
+      totalPlotSf += qty * (pt.sf || 0);
+    }
   });
-  if (totals.plot_lf) addLine('Plotting (Custom Linear Ft)', totals.plot_lf, r.plot, 'lin ft');
-  if (totals.plot_sf) addLine('Custom Lamination (Sq Ft)', totals.plot_sf, r.custLam, 'sq ft');
+  if (totalPlotLf) addLine('Plotting', totalPlotLf, r.plot, 'lin ft');
+  if (totalPlotSf) addLine('Custom Lamination (Sq Ft)', totalPlotSf, r.custLam, 'sq ft');
 
   const serviceTotal = lines.reduce((s, l) => s + l.subtotal, 0);
   const staffTotal = inc.dayRate || 0; // flat day rate for the equipment/unit
