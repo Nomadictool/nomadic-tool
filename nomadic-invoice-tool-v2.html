@@ -1386,15 +1386,71 @@ body {
     </div>
   </div>
 </div>
+<!-- ══════════ NEW EXPENSE REPORT MODAL (pick a pay period) ══════════ -->
+<div class="modal-overlay" id="new-expense-report-modal" style="display:none;z-index:600">
+  <div class="modal" style="max-width:380px">
+    <div class="modal-header">
+      <div class="modal-title">New Expense Report</div>
+      <button onclick="closeNewExpenseReportForm()" style="background:none;border:none;color:var(--gray-400);font-size:20px;cursor:pointer">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>Pay Period</label>
+        <select id="new-report-period-select" style="width:100%"></select>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeNewExpenseReportForm()">Cancel</button>
+      <button class="btn btn-primary" onclick="confirmStartExpenseReport()">Start</button>
+    </div>
+  </div>
+</div>
 <!-- ══════════ EXPENSE REPORT MODAL ══════════ -->
 <div class="modal-overlay" id="expense-report-modal" style="display:none">
-  <div class="modal" style="max-width:700px">
+  <div class="modal" style="max-width:820px">
     <div class="modal-header">
       <div class="modal-title" id="expense-report-title">Expense Report</div>
       <button onclick="closeExpenseReport()" style="background:none;border:none;color:var(--gray-400);font-size:20px;cursor:pointer">✕</button>
     </div>
     <div class="modal-body">
       <div id="expense-report-reject-note" style="display:none;margin-bottom:14px;background:#fdecea;border:1px solid #f5c6cb;color:#7a1f1f;border-radius:var(--radius);padding:10px 14px;font-size:13px"></div>
+
+      <!-- Quick-add row: stays visible the whole time a draft is open, so the whole
+           pay period can be entered one row after another without any modal popping
+           open/closed for each item. -->
+      <div id="expense-quick-add" style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;background:var(--off-white);border:1px solid var(--gray-200);border-radius:var(--radius);padding:12px;margin-bottom:14px">
+        <div class="form-group" style="margin:0;min-width:140px">
+          <label style="font-size:11px">Date</label>
+          <input type="date" id="qa-date" style="font-size:13px;padding:6px 8px;width:100%">
+        </div>
+        <div class="form-group" style="margin:0;min-width:150px">
+          <label style="font-size:11px">Category</label>
+          <select id="qa-category" onchange="onQuickAddCategoryChange()" style="font-size:13px;padding:6px 8px;width:100%">
+            <option value="lodging">Lodging</option>
+            <option value="mileage">Mileage</option>
+            <option value="supplies">Supplies / Incidentals</option>
+            <option value="per_diem_difference">Per Diem Difference</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+        <div class="form-group" id="qa-standard-fields" style="margin:0;flex:1;min-width:180px">
+          <label style="font-size:11px">Description</label>
+          <input type="text" id="qa-description" style="font-size:13px;padding:6px 8px;width:100%">
+        </div>
+        <div id="qa-mileage-fields" style="display:none;gap:8px;flex:1">
+          <div class="form-group" style="margin:0;flex:1;min-width:120px"><label style="font-size:11px">Start Address</label><input type="text" id="qa-start-address" style="font-size:13px;padding:6px 8px;width:100%"></div>
+          <div class="form-group" style="margin:0;flex:1;min-width:120px"><label style="font-size:11px">Finish Address</label><input type="text" id="qa-finish-address" style="font-size:13px;padding:6px 8px;width:100%"></div>
+          <div class="form-group" style="margin:0;min-width:80px"><label style="font-size:11px">Miles</label><input type="number" step="0.1" min="0" id="qa-miles" oninput="updateQuickAddMileageAmount()" style="font-size:13px;padding:6px 8px;width:100%"></div>
+        </div>
+        <div class="form-group" id="qa-amount-wrap" style="margin:0;min-width:90px">
+          <label style="font-size:11px">Amount</label>
+          <input type="number" step="0.01" min="0" id="qa-amount" style="font-size:13px;padding:6px 8px;width:100%">
+        </div>
+        <div id="qa-mileage-amount-display" style="display:none;font-size:12px;color:var(--gray-600);min-width:90px;padding-bottom:8px">= $0.00</div>
+        <button class="btn btn-primary btn-sm" onclick="quickAddExpenseItem()">+ Add</button>
+        <div id="qa-error" style="color:#ef4444;font-size:12px;width:100%"></div>
+      </div>
+
       <table class="orders-table" id="expense-line-items-table" style="display:none">
         <thead>
           <tr><th>Date</th><th>Category</th><th>Description</th><th>Amount</th><th></th></tr>
@@ -1407,46 +1463,6 @@ body {
       <div style="margin-top:14px;text-align:right;font-weight:700;font-size:16px;color:var(--navy)" id="expense-report-total"></div>
     </div>
     <div class="modal-footer" id="expense-report-footer"><!-- rendered by JS --></div>
-  </div>
-</div>
-<!-- ══════════ EXPENSE LINE ITEM MODAL ══════════ -->
-<div class="modal-overlay" id="expense-line-item-modal" style="display:none;z-index:600">
-  <div class="modal" style="max-width:480px">
-    <div class="modal-header">
-      <div class="modal-title">Add Expense</div>
-      <button onclick="closeExpenseLineItemForm()" style="background:none;border:none;color:var(--gray-400);font-size:20px;cursor:pointer">✕</button>
-    </div>
-    <div class="modal-body">
-      <div class="form-group" style="margin-bottom:12px">
-        <label>Category</label>
-        <select id="exp-item-category" onchange="onExpenseCategoryChange()">
-          <option value="lodging">Lodging</option>
-          <option value="mileage">Mileage</option>
-          <option value="supplies">Supplies / Incidentals</option>
-          <option value="per_diem_difference">Per Diem Difference</option>
-          <option value="other">Other</option>
-        </select>
-      </div>
-      <div class="form-group" style="margin-bottom:12px"><label>Date</label><input type="date" id="exp-item-date"></div>
-      <div id="exp-item-standard-fields">
-        <div class="form-group" style="margin-bottom:12px"><label>Company Name</label><input type="text" id="exp-item-company"></div>
-        <div class="form-group" style="margin-bottom:12px"><label>Invoice #</label><input type="text" id="exp-item-invoice"></div>
-        <div class="form-group" style="margin-bottom:12px"><label>Description</label><input type="text" id="exp-item-description"></div>
-        <div class="form-group" style="margin-bottom:12px"><label>Charge Account</label><input type="text" id="exp-item-charge-account"></div>
-        <div class="form-group" style="margin-bottom:12px"><label>Amount ($)</label><input type="number" step="0.01" min="0" id="exp-item-amount"></div>
-      </div>
-      <div id="exp-item-mileage-fields" style="display:none">
-        <div class="form-group" style="margin-bottom:12px"><label>Start Address</label><input type="text" id="exp-item-start-address" placeholder="e.g. Home address"></div>
-        <div class="form-group" style="margin-bottom:12px"><label>Finish Address</label><input type="text" id="exp-item-finish-address" placeholder="e.g. Incident location"></div>
-        <div class="form-group" style="margin-bottom:12px"><label>Miles</label><input type="number" step="0.1" min="0" id="exp-item-miles" oninput="updateMileageAmount()"></div>
-        <div style="font-size:12px;color:var(--gray-500)">Reimbursed at $<span id="exp-mileage-rate-display">0.00</span>/mile = $<span id="exp-mileage-amount-display">0.00</span></div>
-      </div>
-      <div id="exp-item-error" style="color:#ef4444;font-size:13px"></div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn btn-outline" onclick="closeExpenseLineItemForm()">Cancel</button>
-      <button class="btn btn-primary" onclick="saveExpenseLineItem()">Save</button>
-    </div>
   </div>
 </div>
 <!-- ══════════ ADD ORDER MODAL ══════════ -->
@@ -4035,16 +4051,34 @@ function renderExpenseReminderBanner() {
   el.style.display = html ? 'block' : 'none';
 }
 
-async function startNewExpenseReport() {
-  const period = getPayPeriodFor(todayStr());
+function startNewExpenseReport() {
+  const current = getPayPeriodFor(todayStr());
+  const periods = [-1, 0, 1].map(offset => {
+    const base = new Date(current.start + 'T00:00:00');
+    base.setDate(base.getDate() + offset * PAY_PERIOD_LENGTH_DAYS);
+    return getPayPeriodFor(base.toISOString().slice(0, 10));
+  });
+  const select = document.getElementById('new-report-period-select');
+  select.innerHTML = periods.map(p => {
+    const isCurrent = p.start === current.start;
+    return `<option value="${p.start}|${p.end}" ${isCurrent ? 'selected' : ''}>${formatDate(p.start)} – ${formatDate(p.end)}${isCurrent ? ' (current)' : ''}</option>`;
+  }).join('');
+  document.getElementById('new-expense-report-modal').style.display = 'flex';
+}
+function closeNewExpenseReportForm() {
+  document.getElementById('new-expense-report-modal').style.display = 'none';
+}
+async function confirmStartExpenseReport() {
+  const [start, end] = document.getElementById('new-report-period-select').value.split('|');
+  closeNewExpenseReportForm();
   // Reuse the existing report for this period if one already exists, rather than creating a duplicate.
-  const existing = _myExpenseReports.find(r => r.pay_period_start === period.start && r.pay_period_end === period.end);
+  const existing = _myExpenseReports.find(r => r.pay_period_start === start && r.pay_period_end === end);
   if (existing) { openExpenseReport(existing.id); return; }
   const { data, error } = await _sb.from('expense_reports').insert({
     employee_id: state._session.employee.id,
     incident_id: state._activeId && state._incidents.find(i => i.id === state._activeId) ? state._activeId : null,
-    pay_period_start: period.start,
-    pay_period_end: period.end,
+    pay_period_start: start,
+    pay_period_end: end,
   }).select().single();
   if (error) { alert('Could not start a new expense report: ' + error.message); return; }
   await loadMyExpenseReports();
@@ -4057,6 +4091,7 @@ async function openExpenseReport(id) {
   const { data: items } = await _sb.from('expense_line_items').select('*').eq('expense_report_id', id).order('date');
   _activeExpenseReport = { report, items: items || [] };
   renderExpenseReportModal();
+  resetQuickAddRow();
   document.getElementById('expense-report-modal').style.display = 'flex';
 }
 function closeExpenseReport() {
@@ -4064,11 +4099,26 @@ function closeExpenseReport() {
   _activeExpenseReport = null;
 }
 
+// Reloads just the line items (not the whole report) and re-renders — used after
+// add/delete so the sticky date/category in the quick-add row aren't reset mid-entry.
+async function refreshActiveExpenseItems() {
+  const { data: items } = await _sb.from('expense_line_items').select('*').eq('expense_report_id', _activeExpenseReport.report.id).order('date');
+  _activeExpenseReport.items = items || [];
+  renderExpenseReportModal();
+}
+
 function renderExpenseReportModal() {
   const { report, items } = _activeExpenseReport;
   const isOwner = report.employee_id === state._session.employee.id;
   const isDraft = report.status === 'draft';
   document.getElementById('expense-report-title').textContent = `${formatDate(report.pay_period_start)} – ${formatDate(report.pay_period_end)}`;
+
+  const quickAdd = document.getElementById('expense-quick-add');
+  if (quickAdd) {
+    quickAdd.style.display = (isDraft && isOwner) ? 'flex' : 'none';
+    const dateInput = document.getElementById('qa-date');
+    if (dateInput) { dateInput.min = report.pay_period_start; dateInput.max = report.pay_period_end; }
+  }
 
   const tbody = document.getElementById('expense-line-items-tbody');
   const table = document.getElementById('expense-line-items-table');
@@ -4100,9 +4150,8 @@ function renderExpenseReportModal() {
 
   const footer = document.getElementById('expense-report-footer');
   let buttons = '<button class="btn btn-outline" onclick="closeExpenseReport()">Close</button>';
-  if (isDraft && isOwner) {
-    buttons += `<button class="btn btn-outline" onclick="openExpenseLineItemForm()">+ Add Expense</button>`;
-    if (items.length) buttons += `<button class="btn btn-primary" onclick="submitExpenseReport()">Submit Report</button>`;
+  if (isDraft && isOwner && items.length) {
+    buttons += `<button class="btn btn-primary" onclick="submitExpenseReport()">Submit Report</button>`;
   }
   // Admins can approve/reject anyone's report except their own, so a second admin always has to sign off.
   if (state.isAdmin && report.status === 'submitted' && report.employee_id !== state._session.employee.id) {
@@ -4112,60 +4161,60 @@ function renderExpenseReportModal() {
   footer.innerHTML = buttons;
 }
 
-function openExpenseLineItemForm() {
-  document.getElementById('exp-item-category').value = 'lodging';
-  document.getElementById('exp-item-date').value = todayStr();
-  document.getElementById('exp-item-company').value = '';
-  document.getElementById('exp-item-invoice').value = '';
-  document.getElementById('exp-item-description').value = '';
-  document.getElementById('exp-item-charge-account').value = '';
-  document.getElementById('exp-item-amount').value = '';
-  document.getElementById('exp-item-start-address').value = '';
-  document.getElementById('exp-item-finish-address').value = '';
-  document.getElementById('exp-item-miles').value = '';
-  document.getElementById('exp-item-error').textContent = '';
-  document.getElementById('exp-mileage-rate-display').textContent = (state.rates.mileageRate || 0).toFixed(2);
-  document.getElementById('exp-mileage-amount-display').textContent = '0.00';
-  onExpenseCategoryChange();
-  document.getElementById('expense-line-item-modal').style.display = 'flex';
+// Full reset — only on first opening a report, not after each quick-add (date/category stay sticky).
+function resetQuickAddRow() {
+  const { report } = _activeExpenseReport;
+  const dateInput = document.getElementById('qa-date');
+  dateInput.min = report.pay_period_start;
+  dateInput.max = report.pay_period_end;
+  const today = todayStr();
+  dateInput.value = (today >= report.pay_period_start && today <= report.pay_period_end) ? today : report.pay_period_start;
+  document.getElementById('qa-category').value = 'lodging';
+  clearQuickAddContentFields();
+  onQuickAddCategoryChange();
 }
-function closeExpenseLineItemForm() {
-  document.getElementById('expense-line-item-modal').style.display = 'none';
+function clearQuickAddContentFields() {
+  document.getElementById('qa-description').value = '';
+  document.getElementById('qa-amount').value = '';
+  document.getElementById('qa-start-address').value = '';
+  document.getElementById('qa-finish-address').value = '';
+  document.getElementById('qa-miles').value = '';
+  document.getElementById('qa-mileage-amount-display').textContent = '= $0.00';
+  document.getElementById('qa-error').textContent = '';
 }
-function onExpenseCategoryChange() {
-  const isMileage = document.getElementById('exp-item-category').value === 'mileage';
-  document.getElementById('exp-item-standard-fields').style.display = isMileage ? 'none' : 'block';
-  document.getElementById('exp-item-mileage-fields').style.display = isMileage ? 'block' : 'none';
+function onQuickAddCategoryChange() {
+  const isMileage = document.getElementById('qa-category').value === 'mileage';
+  document.getElementById('qa-standard-fields').style.display = isMileage ? 'none' : 'block';
+  document.getElementById('qa-mileage-fields').style.display = isMileage ? 'flex' : 'none';
+  document.getElementById('qa-amount-wrap').style.display = isMileage ? 'none' : 'block';
+  document.getElementById('qa-mileage-amount-display').style.display = isMileage ? 'block' : 'none';
 }
-function updateMileageAmount() {
-  const miles = parseFloat(document.getElementById('exp-item-miles').value) || 0;
+function updateQuickAddMileageAmount() {
+  const miles = parseFloat(document.getElementById('qa-miles').value) || 0;
   const rate = state.rates.mileageRate || 0;
-  document.getElementById('exp-mileage-amount-display').textContent = (miles * rate).toFixed(2);
+  document.getElementById('qa-mileage-amount-display').textContent = '= $' + (miles * rate).toFixed(2);
 }
 
-async function saveExpenseLineItem() {
-  const category = document.getElementById('exp-item-category').value;
-  const date = document.getElementById('exp-item-date').value;
-  const errEl = document.getElementById('exp-item-error');
+async function quickAddExpenseItem() {
+  const category = document.getElementById('qa-category').value;
+  const date = document.getElementById('qa-date').value;
+  const errEl = document.getElementById('qa-error');
   errEl.textContent = '';
   if (!date) { errEl.textContent = 'Date is required.'; return; }
 
   let payload = { expense_report_id: _activeExpenseReport.report.id, date, category };
   if (category === 'mileage') {
-    const miles = parseFloat(document.getElementById('exp-item-miles').value) || 0;
+    const miles = parseFloat(document.getElementById('qa-miles').value) || 0;
     if (!miles) { errEl.textContent = 'Enter the miles driven.'; return; }
-    payload.start_address = document.getElementById('exp-item-start-address').value.trim();
-    payload.finish_address = document.getElementById('exp-item-finish-address').value.trim();
+    payload.start_address = document.getElementById('qa-start-address').value.trim();
+    payload.finish_address = document.getElementById('qa-finish-address').value.trim();
     payload.miles = miles;
     payload.amount = miles * (state.rates.mileageRate || 0);
     payload.receipt_status = 'none'; // mileage never needs a receipt
   } else {
-    const amount = parseFloat(document.getElementById('exp-item-amount').value) || 0;
+    const amount = parseFloat(document.getElementById('qa-amount').value) || 0;
     if (!amount) { errEl.textContent = 'Enter an amount.'; return; }
-    payload.company_name = document.getElementById('exp-item-company').value.trim();
-    payload.invoice_number = document.getElementById('exp-item-invoice').value.trim();
-    payload.description = document.getElementById('exp-item-description').value.trim();
-    payload.charge_account = document.getElementById('exp-item-charge-account').value.trim();
+    payload.description = document.getElementById('qa-description').value.trim();
     payload.amount = amount;
     // No receipt-attach mechanism exists yet (that's Phase 3) — every non-mileage
     // item honestly starts as "pending" since nothing can be collected yet.
@@ -4173,15 +4222,17 @@ async function saveExpenseLineItem() {
   }
   const { error } = await _sb.from('expense_line_items').insert(payload);
   if (error) { errEl.textContent = error.message; return; }
-  closeExpenseLineItemForm();
-  await openExpenseReport(_activeExpenseReport.report.id);
+  clearQuickAddContentFields();
+  await refreshActiveExpenseItems();
   await loadMyExpenseReports();
+  const nextFocus = document.getElementById(category === 'mileage' ? 'qa-start-address' : 'qa-description');
+  if (nextFocus) nextFocus.focus();
 }
 
 async function deleteExpenseLineItem(id) {
   if (!confirm('Delete this expense item?')) return;
   await _sb.from('expense_line_items').delete().eq('id', id);
-  await openExpenseReport(_activeExpenseReport.report.id);
+  await refreshActiveExpenseItems();
   await loadMyExpenseReports();
 }
 
