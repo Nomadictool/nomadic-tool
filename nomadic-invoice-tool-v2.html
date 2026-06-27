@@ -1429,7 +1429,7 @@ body {
             <option value="lodging">Lodging</option>
             <option value="mileage">Mileage</option>
             <option value="supplies">Supplies / Incidentals</option>
-            <option value="per_diem_difference">Per Diem Difference</option>
+            <option value="per_diem_difference">Meals Per Diem</option>
             <option value="other">Other</option>
           </select>
         </div>
@@ -3993,7 +3993,7 @@ function getExpenseDeadline(periodEndStr) {
   return new Date(end.getTime() + EXPENSE_DEADLINE_LEAD_DAYS * 86400000).toISOString().slice(0, 10);
 }
 
-const EXPENSE_CATEGORY_LABELS = { lodging: 'Lodging', mileage: 'Mileage', supplies: 'Supplies', per_diem_difference: 'Per Diem Diff.', other: 'Other' };
+const EXPENSE_CATEGORY_LABELS = { lodging: 'Lodging', mileage: 'Mileage', supplies: 'Supplies', per_diem_difference: 'Meals Per Diem', other: 'Other' };
 
 let _myExpenseReports = [];
 let _activeExpenseReport = null; // { report, items } currently open in the modal
