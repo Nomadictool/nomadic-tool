@@ -652,6 +652,47 @@ body {
   <div style="font-family:'Barlow Condensed',sans-serif;font-size:15px;letter-spacing:2px;color:#d4d1cb;text-transform:uppercase">Loading incident data…</div>
 </div>
 
+<!-- ══════════ PIN LOGIN SCREEN ══════════ -->
+<div id="pin-login-screen" style="display:none;position:fixed;inset:0;background:var(--navy,#0a0f16);z-index:9998;flex-direction:column;align-items:center;justify-content:center;gap:18px;padding:24px">
+  <img src="" id="login-logo-display" alt="Nomadic" style="height:56px;width:auto;margin-bottom:8px">
+  <div style="background:var(--white);border-radius:var(--radius-lg);box-shadow:var(--shadow-lg);padding:32px 28px;width:100%;max-width:340px;text-align:center">
+    <div style="font-family:'Barlow Condensed',sans-serif;font-size:20px;font-weight:700;color:var(--navy,#0a0f16);margin-bottom:4px">Enter Your PIN</div>
+    <div style="font-size:13px;color:var(--gray-500);margin-bottom:18px">Each shift starts fresh — enter your PIN to continue.</div>
+    <input type="password" inputmode="numeric" pattern="[0-9]*" id="pin-login-input" maxlength="6" placeholder="••••••"
+      style="width:100%;font-size:28px;letter-spacing:10px;text-align:center;padding:12px;border:2px solid var(--gray-200);border-radius:var(--radius);margin-bottom:12px"
+      onkeydown="if(event.key==='Enter') submitPinLogin()">
+    <div id="pin-login-error" style="color:#ef4444;font-size:13px;min-height:18px;margin-bottom:8px"></div>
+    <button class="btn btn-primary" style="width:100%" onclick="submitPinLogin()" id="pin-login-btn">Log In</button>
+    <div style="margin-top:16px;font-size:12px;color:var(--gray-400)">
+      First time setting this up? <a href="#" onclick="showBootstrapAdminForm();return false;" style="color:var(--amber,#f5a623)">Create the first admin account</a>
+    </div>
+    <div id="bootstrap-admin-form" style="display:none;margin-top:14px;border-top:1px solid var(--gray-100);padding-top:14px;text-align:left">
+      <div class="form-group" style="margin-bottom:8px"><label>Your Name</label><input type="text" id="bootstrap-admin-name"></div>
+      <div class="form-group" style="margin-bottom:8px"><label>Choose a PIN (6 digits)</label><input type="password" inputmode="numeric" maxlength="6" id="bootstrap-admin-pin"></div>
+      <button class="btn btn-outline" style="width:100%" onclick="submitBootstrapAdmin()">Create Admin Account</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ NO FIRES ASSIGNED SCREEN (staff with zero assignments) ══════════ -->
+<div id="no-fires-screen" style="display:none;position:fixed;inset:0;background:var(--navy,#0a0f16);z-index:9996;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px;text-align:center">
+  <div style="font-size:40px">🔥</div>
+  <div style="font-family:'Barlow Condensed',sans-serif;font-size:20px;font-weight:700;color:var(--white)">No fires assigned yet</div>
+  <div style="font-size:14px;color:var(--gray-200);max-width:340px">Your admin hasn't assigned you to an incident yet. Check back once you've been added, or contact them directly.</div>
+  <a href="#" onclick="logOut();return false;" style="margin-top:8px;color:var(--amber,#f5a623);text-decoration:underline;font-size:13px">Log out</a>
+</div>
+
+<!-- ══════════ "STILL THERE?" INACTIVITY MODAL ══════════ -->
+<div class="modal-overlay" id="inactivity-modal" style="display:none;z-index:9997">
+  <div class="modal" style="max-width:380px;text-align:center">
+    <div class="modal-body">
+      <div style="font-family:'Barlow Condensed',sans-serif;font-size:18px;font-weight:700;margin-bottom:8px">Still there?</div>
+      <p style="font-size:13px;color:var(--gray-500);margin-bottom:16px">You'll be logged out in about a minute due to inactivity — useful when a shift hands off a shared device.</p>
+      <button class="btn btn-primary" style="width:100%" onclick="dismissInactivityWarning()">I'm still here</button>
+    </div>
+  </div>
+</div>
+
 <!-- ══════════ SETUP MODAL ══════════ -->
 <div class="modal-overlay" id="setup-modal">
   <div class="modal">
@@ -754,6 +795,12 @@ body {
         </div>
         <div style="font-size:12px;color:var(--gray-500);margin-top:4px">M&amp;IE multiplied by all staff. Lodging divided into double-occupancy rooms. Leave blank if not claiming. Checked daily on the log.</div>
       </div>
+
+      <div id="setup-employees-section" style="display:none;margin-top:20px">
+        <div class="section-label">Assigned Employees</div>
+        <div style="font-size:12px;color:var(--gray-500);margin-bottom:8px">Only employees checked here will see this fire after logging in with their PIN.</div>
+        <div id="setup-employees-list" style="max-height:180px;overflow-y:auto;border:1px solid var(--gray-200);border-radius:var(--radius);padding:10px"><!-- rendered by JS --></div>
+      </div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-outline btn-lg" onclick="closeSetup()" id="setup-cancel-btn" style="display:none">Cancel</button>
@@ -776,8 +823,13 @@ body {
     <button class="btn btn-outline btn-sm" onclick="showSetup()" id="change-incident-btn" style="display:none; color:var(--gray-200); border-color:var(--navy-mid)">✎ Edit Incident</button>
     <button class="btn btn-outline btn-sm" onclick="openFireSelector()" id="switch-fire-btn" style="display:none; color:var(--amber); border-color:var(--amber)">⇄ Switch Fire</button>
     <button class="btn btn-outline btn-sm" onclick="openIncidentManager()" id="manage-incidents-btn" style="display:none; color:var(--gray-200); border-color:var(--navy-mid)">⚙ Incidents</button>
+    <button class="btn btn-outline btn-sm" onclick="openEmployeeManager()" id="manage-employees-btn" style="display:none; color:var(--gray-200); border-color:var(--navy-mid)">👥 Employees</button>
     <span id="sync-pulse" style="font-size:11px;color:#6aaa6e;opacity:0;transition:opacity 0.6s;letter-spacing:1px">⟳ SYNCED</span>
     <span id="last-saved-display" style="font-size:11px;color:var(--gray-400);letter-spacing:0.5px"></span>
+    <span id="logged-in-as-display" style="display:none;font-size:12px;color:var(--gray-200);align-items:center;gap:8px">
+      Logged in as <strong id="logged-in-as-name" style="color:var(--amber)">—</strong>
+      <a href="#" onclick="logOut();return false;" style="color:var(--gray-400);text-decoration:underline;font-size:11px">Not you? Log out</a>
+    </span>
   </div>
 </header>
 
@@ -1252,6 +1304,42 @@ body {
     </div>
   </div>
 </div>
+<!-- ══════════ EMPLOYEE MANAGER MODAL ══════════ -->
+<div class="modal-overlay" id="employee-manager-modal" style="display:none">
+  <div class="modal" style="max-width:700px">
+    <div class="modal-header">
+      <div class="modal-title">Manage Employees</div>
+      <button onclick="closeEmployeeManager()" style="background:none;border:none;color:var(--gray-400);font-size:20px;cursor:pointer">X</button>
+    </div>
+    <div class="modal-body" id="employee-manager-body"><!-- rendered by JS --></div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeEmployeeManager()">Close</button>
+      <button class="btn btn-primary" onclick="showNewEmployeeForm()">+ New Employee</button>
+    </div>
+  </div>
+</div>
+<!-- ══════════ NEW EMPLOYEE MODAL ══════════ -->
+<div class="modal-overlay" id="new-employee-modal" style="display:none;z-index:600">
+  <div class="modal" style="max-width:400px">
+    <div class="modal-header">
+      <div class="modal-title">New Employee</div>
+      <button onclick="closeNewEmployeeForm()" style="background:none;border:none;color:var(--gray-400);font-size:20px;cursor:pointer">X</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group" style="margin-bottom:12px"><label>Name</label><input type="text" id="new-employee-name"></div>
+      <div class="form-group" style="margin-bottom:12px"><label>PIN (6 digits)</label><input type="password" inputmode="numeric" maxlength="6" id="new-employee-pin"></div>
+      <div class="form-group" style="margin-bottom:12px">
+        <label>Role</label>
+        <select id="new-employee-role"><option value="staff">Staff</option><option value="admin">Admin</option></select>
+      </div>
+      <div id="new-employee-error" style="color:#ef4444;font-size:13px"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeNewEmployeeForm()">Cancel</button>
+      <button class="btn btn-primary" onclick="createEmployee()">Create</button>
+    </div>
+  </div>
+</div>
 <!-- ══════════ ADD ORDER MODAL ══════════ -->
 <div class="modal-overlay" id="add-order-modal" style="display:none">
   <div class="modal" style="max-width:780px">
@@ -1513,11 +1601,15 @@ const DEFAULT_INVENTORY = [
 const state = {
   _incidents: [],
   _activeId: null,
+  _session: null, // { employee: {id,name,role} } set after PIN login
   rates: JSON.parse(JSON.stringify(DEFAULT_RATES)), // populated from Supabase on init
   currentDate: todayStr(),
   editingOrderId: null,
   selectedPlotType: null,
   adminUnlocked: false,
+  get isAdmin() {
+    return this._session?.employee?.role === 'admin';
+  },
   get incident() {
     const e = this._incidents.find(i => i.id === this._activeId);
     return e ? e.incident : null;
@@ -1846,26 +1938,170 @@ function refreshLastSavedDisplay() {
 // Update the "X min ago" label every 60 seconds
 setInterval(refreshLastSavedDisplay, 60000);
 
+// ══════════ AUTH (PIN LOGIN) ══════════
+async function submitPinLogin() {
+  const pinInput = document.getElementById('pin-login-input');
+  const pin = pinInput.value.trim();
+  const errEl = document.getElementById('pin-login-error');
+  const btn = document.getElementById('pin-login-btn');
+  errEl.textContent = '';
+  if (!pin) { errEl.textContent = 'Enter your PIN.'; return; }
+  btn.disabled = true; btn.textContent = 'Logging in…';
+  try {
+    const resp = await fetch('/.netlify/functions/pin-login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pin })
+    });
+    const data = await resp.json();
+    if (!resp.ok) {
+      errEl.textContent = data.error || 'Invalid PIN.';
+      pinInput.value = '';
+      pinInput.focus();
+      return;
+    }
+    await _sb.auth.setSession({ access_token: data.access_token, refresh_token: data.refresh_token });
+    state._session = { employee: data.employee };
+    pinInput.value = '';
+    onLoginSuccess();
+  } catch (err) {
+    errEl.textContent = 'Could not reach the server. Check your connection.';
+  } finally {
+    btn.disabled = false; btn.textContent = 'Log In';
+  }
+}
+
+function showBootstrapAdminForm() {
+  document.getElementById('bootstrap-admin-form').style.display = 'block';
+}
+
+async function submitBootstrapAdmin() {
+  const name = document.getElementById('bootstrap-admin-name').value.trim();
+  const pin = document.getElementById('bootstrap-admin-pin').value.trim();
+  if (!name || !pin) { alert('Enter your name and a PIN.'); return; }
+  try {
+    const resp = await fetch('/.netlify/functions/admin-employees', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'create', name, pin, role: 'admin' })
+    });
+    const data = await resp.json();
+    if (!resp.ok) { alert(data.error || 'Could not create admin account — if one already exists, ask them to add you from the Employees screen instead.'); return; }
+    alert('Admin account created. Enter your PIN to log in.');
+    document.getElementById('bootstrap-admin-form').style.display = 'none';
+    document.getElementById('bootstrap-admin-name').value = '';
+    document.getElementById('bootstrap-admin-pin').value = '';
+    document.getElementById('pin-login-input').focus();
+  } catch (err) {
+    alert('Could not reach the server. Check your connection.');
+  }
+}
+
+function onLoginSuccess() {
+  document.getElementById('pin-login-screen').style.display = 'none';
+  const nameEl = document.getElementById('logged-in-as-name');
+  const wrapEl = document.getElementById('logged-in-as-display');
+  if (nameEl) nameEl.textContent = state._session?.employee?.name || '—';
+  if (wrapEl) wrapEl.style.display = 'flex';
+  const empBtn = document.getElementById('manage-employees-btn');
+  if (empBtn) empBtn.style.display = state.isAdmin ? '' : 'none';
+  resetInactivityTimer();
+  initAppAfterLogin();
+}
+
+async function logOut() {
+  clearTimeout(_inactivityWarnTimer);
+  clearTimeout(_inactivityLogoutTimer);
+  try { await _sb.auth.signOut(); } catch (e) {}
+  location.reload();
+}
+
+// ── Inactivity auto-logout — shared field laptop safeguard, so one shift
+// can't accidentally keep working under the previous shift's PIN. ──
+const INACTIVITY_WARN_MS = 29 * 60 * 1000;   // show "Still there?" at 29 min idle
+const INACTIVITY_LOGOUT_MS = 30 * 60 * 1000; // log out at 30 min idle
+let _inactivityWarnTimer = null;
+let _inactivityLogoutTimer = null;
+
+function resetInactivityTimer() {
+  clearTimeout(_inactivityWarnTimer);
+  clearTimeout(_inactivityLogoutTimer);
+  if (!state._session) return;
+  const modal = document.getElementById('inactivity-modal');
+  if (modal) modal.style.display = 'none';
+  _inactivityWarnTimer = setTimeout(() => {
+    const m = document.getElementById('inactivity-modal');
+    if (m) m.style.display = 'flex';
+  }, INACTIVITY_WARN_MS);
+  _inactivityLogoutTimer = setTimeout(logOut, INACTIVITY_LOGOUT_MS);
+}
+
+function dismissInactivityWarning() {
+  const modal = document.getElementById('inactivity-modal');
+  if (modal) modal.style.display = 'none';
+  resetInactivityTimer();
+}
+
+['click', 'keydown', 'touchstart'].forEach(evt => {
+  document.addEventListener(evt, () => { if (state._session) resetInactivityTimer(); }, { passive: true });
+});
+
+function showNoFiresAssignedMessage() {
+  document.getElementById('setup-modal').style.display = 'none';
+  const screen = document.getElementById('no-fires-screen');
+  if (screen) screen.style.display = 'flex';
+}
+
 // ══════════ INIT ══════════
 loadSessionState();
 document.addEventListener('DOMContentLoaded', async () => {
   const headerLogoDisplay = document.getElementById('header-logo-display');
   if (headerLogoDisplay) headerLogoDisplay.src = document.getElementById('logo-data-img').src;
+  const loginLogoDisplay = document.getElementById('login-logo-display');
+  if (loginLogoDisplay) loginLogoDisplay.src = document.getElementById('logo-data-img').src;
   buildPlotGrid();
   attachOrderListeners();
+  document.getElementById('loading-overlay').style.display = 'none';
 
+  // Check for an existing Supabase Auth session before loading any data —
+  // under RLS there's nothing useful (or safe) to fetch without an identity.
+  try {
+    const { data } = await _sb.auth.getSession();
+    if (data?.session) {
+      const { data: empRows } = await _sb.from('employees').select('id,name,role').eq('id', data.session.user.id);
+      const emp = empRows && empRows[0];
+      if (emp) {
+        state._session = { employee: emp };
+        onLoginSuccess();
+        return;
+      }
+    }
+  } catch (err) {
+    console.warn('[Nomadic] Session check failed:', err);
+  }
+  // No valid session — show the PIN login screen and wait for one.
+  document.getElementById('pin-login-screen').style.display = 'flex';
+  document.getElementById('pin-login-input').focus();
+});
+
+async function initAppAfterLogin() {
+  document.getElementById('loading-overlay').style.display = 'flex';
   // Fetch shared data from Supabase (loading overlay is visible during this)
   try {
-    await migrateLocalToSupabase(); // no-op if Supabase already has data
+    if (state.isAdmin) await migrateLocalToSupabase(); // no-op if Supabase already has data; staff never run this
     await loadFromSupabase();
     subscribeRealtime();
-  } catch(err) {
+  } catch (err) {
     console.error('[Nomadic] Supabase init failed, falling back to local data:', err);
-    // Graceful fallback: try localStorage
-    const localRaw = localStorage.getItem('nomadic_incidents');
-    if (localRaw) { try { state._incidents = JSON.parse(localRaw); } catch(e) { console.warn('[Nomadic] Fallback parse failed:', e); } }
-    const localRates = localStorage.getItem('nomadic_rates');
-    if (localRates) { try { state.rates = JSON.parse(localRates); } catch(e) {} }
+    if (state.isAdmin) {
+      // Local-backup fallback only makes sense for the admin's own device —
+      // for staff, an empty/failed fetch legitimately means "no fires
+      // assigned," not "go recover a stale local backup."
+      const localRaw = localStorage.getItem('nomadic_incidents');
+      if (localRaw) { try { state._incidents = JSON.parse(localRaw); } catch (e) { console.warn('[Nomadic] Fallback parse failed:', e); } }
+      const localRates = localStorage.getItem('nomadic_rates');
+      if (localRates) { try { state.rates = JSON.parse(localRates); } catch (e) {} }
+    }
   }
 
   document.getElementById('loading-overlay').style.display = 'none';
@@ -1882,16 +2118,17 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('setup-start-date').value = state.currentDate;
 
   const _activeIncs = state._incidents.filter(i => !i.archived);
-  if (state._incidents.length === 0) {
-    // No incidents anywhere yet — show the setup form
-    populateSetupDefaults();
-    if (document.getElementById('staff-names-list').children.length === 0) addStaffRow();
-    setSetupModalMode(false);
-  } else if (_activeIncs.length === 0) {
-    // All incidents are archived — treat as no active fire, show setup
-    populateSetupDefaults();
-    if (document.getElementById('staff-names-list').children.length === 0) addStaffRow();
-    setSetupModalMode(false);
+  if (state._incidents.length === 0 || _activeIncs.length === 0) {
+    if (state.isAdmin) {
+      // No incidents anywhere yet (or all archived) — show the setup form
+      populateSetupDefaults();
+      if (document.getElementById('staff-names-list').children.length === 0) addStaffRow();
+      setSetupModalMode(false);
+    } else {
+      // Staff with no fire assignments can't create incidents (and RLS
+      // wouldn't let them save one anyway) — show a plain message instead.
+      showNoFiresAssignedMessage();
+    }
   } else if (_activeIncs.length === 1) {
     // One active incident — auto-select it
     state._activeId = _activeIncs[0].id;
@@ -1904,7 +2141,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('setup-modal').style.display = 'none';
     openFireSelector();
   }
-});
+}
 
 const SERVICE_TYPE_DAY_RATES = {
   clerical: null,   // uses agency rates config
@@ -2108,6 +2345,11 @@ function saveSetup() {
   const perDiemMealsRate   = parseFloat(document.getElementById('setup-perdiem-meals').value)   || 0;
   const perDiemLodgingRate = parseFloat(document.getElementById('setup-perdiem-lodging').value) || 0;
 
+  // Capture checked employee assignments before state._activeId potentially changes below.
+  const checkedEmployeeIds = state.isAdmin
+    ? [...document.querySelectorAll('.setup-employee-checkbox:checked')].map(c => c.value)
+    : null;
+
   const incData = { name, eNumber, agency, startDate, dayRate, serviceType, unit, staffNames, addStaff, additionalStaff, perDiemEnabled, perDiemMealsRate, perDiemLodgingRate };
   const existing = state._incidents.find(i => i.id === state._activeId);
   if (existing) {
@@ -2118,9 +2360,29 @@ function saveSetup() {
     state._activeId = id;
   }
   saveState();
+  if (checkedEmployeeIds) saveFireAssignments(state._activeId, checkedEmployeeIds);
   document.getElementById('setup-modal').style.display = 'none';
   applyIncident();
   renderDailyLog();
+}
+
+// Diff the checked employees against current fire_assignments rows and write the difference.
+async function saveFireAssignments(incidentId, checkedEmployeeIds) {
+  try {
+    const { data: current } = await _sb.from('fire_assignments').select('employee_id').eq('incident_id', incidentId);
+    const currentIds = new Set((current || []).map(r => r.employee_id));
+    const checkedSet = new Set(checkedEmployeeIds);
+    const toInsert = checkedEmployeeIds.filter(id => !currentIds.has(id));
+    const toDelete = [...currentIds].filter(id => !checkedSet.has(id));
+    if (toInsert.length) {
+      await _sb.from('fire_assignments').insert(toInsert.map(employee_id => ({ employee_id, incident_id: incidentId })));
+    }
+    if (toDelete.length) {
+      await _sb.from('fire_assignments').delete().eq('incident_id', incidentId).in('employee_id', toDelete);
+    }
+  } catch (err) {
+    console.error('[Nomadic] Could not save fire assignments:', err);
+  }
 }
 
 function showSetup() {
@@ -2148,7 +2410,40 @@ function showSetup() {
     togglePerDiemSetup();
   }
   setSetupModalMode(!!state.incident);
+  populateSetupEmployeesList();
   document.getElementById('setup-modal').style.display = 'flex';
+}
+
+// Render the admin-only "Assigned Employees" checklist for the incident currently open in Setup
+async function populateSetupEmployeesList() {
+  const section = document.getElementById('setup-employees-section');
+  if (!section) return;
+  if (!state.isAdmin) { section.style.display = 'none'; return; }
+  section.style.display = 'block';
+  const listEl = document.getElementById('setup-employees-list');
+  listEl.innerHTML = '<div style="font-size:13px;color:var(--gray-400)">Loading…</div>';
+  try {
+    const { data: employees } = await _sb.from('employees').select('id,name').eq('active', true).order('name');
+    let assignedIds = new Set();
+    // _activeId may be a not-yet-saved placeholder for a brand new incident — that's fine,
+    // the assignments query just returns nothing and every checkbox starts unchecked.
+    if (state._activeId) {
+      const { data: assignments } = await _sb.from('fire_assignments').select('employee_id').eq('incident_id', state._activeId);
+      assignedIds = new Set((assignments || []).map(a => a.employee_id));
+    }
+    if (!employees || employees.length === 0) {
+      listEl.innerHTML = '<div style="font-size:13px;color:var(--gray-400)">No employees yet — add some from the 👥 Employees screen.</div>';
+      return;
+    }
+    listEl.innerHTML = employees.map(e => `
+      <label style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:13px;cursor:pointer">
+        <input type="checkbox" class="setup-employee-checkbox" value="${e.id}" ${assignedIds.has(e.id) ? 'checked' : ''}>
+        ${escHtml(e.name)}
+      </label>
+    `).join('');
+  } catch (err) {
+    listEl.innerHTML = '<div style="font-size:13px;color:#ef4444">Could not load employees.</div>';
+  }
 }
 
 // Toggle the Setup modal between "new incident" and "edit incident" presentation
@@ -3390,6 +3685,127 @@ function deleteIncident(id) {
   applyIncident();
   renderDailyLog();
   renderIncidentManager();
+}
+
+// ══════════ EMPLOYEE MANAGER (admin only) ══════════
+function openEmployeeManager() {
+  if (!state.isAdmin) return;
+  renderEmployeeManager();
+  document.getElementById('employee-manager-modal').style.display = 'flex';
+}
+function closeEmployeeManager() {
+  document.getElementById('employee-manager-modal').style.display = 'none';
+}
+
+let _employeeManagerCache = []; // last-fetched employee list, so action handlers can look up a name without embedding free text into an onclick string
+
+async function renderEmployeeManager() {
+  const body = document.getElementById('employee-manager-body');
+  body.innerHTML = '<div style="color:var(--gray-400);font-size:13px">Loading…</div>';
+  const { data: employees, error } = await _sb.from('employees').select('id,name,role,active').order('name');
+  if (error) { body.innerHTML = '<div style="color:#ef4444;font-size:13px">Could not load employees.</div>'; return; }
+  _employeeManagerCache = employees || [];
+  if (!employees || employees.length === 0) {
+    body.innerHTML = '<div class="empty-state"><div class="empty-icon">👥</div><p>No employees yet.</p></div>';
+    return;
+  }
+  // Fetch assignment counts in one query and tally client-side (small dataset, simplest correct approach)
+  const { data: assignments } = await _sb.from('fire_assignments').select('employee_id');
+  const countByEmployee = {};
+  (assignments || []).forEach(a => { countByEmployee[a.employee_id] = (countByEmployee[a.employee_id] || 0) + 1; });
+
+  body.innerHTML = employees.map(e => `
+    <div style="padding:14px 0;border-bottom:1px solid var(--gray-100);display:flex;align-items:center;gap:12px;${e.active ? '' : 'opacity:0.55;'}">
+      <div style="flex:1">
+        <div style="font-weight:600;font-size:14px;color:var(--navy)">${escHtml(e.name)}
+          <span style="font-size:10px;background:${e.role === 'admin' ? '#fee2e2' : '#e5e7eb'};color:${e.role === 'admin' ? '#991b1b' : '#6b7280'};padding:1px 6px;border-radius:4px;font-weight:600;margin-left:4px">${e.role.toUpperCase()}</span>
+          ${!e.active ? '<span style="font-size:10px;background:#e5e7eb;color:#6b7280;padding:1px 6px;border-radius:4px;font-weight:500;margin-left:4px">DEACTIVATED</span>' : ''}
+        </div>
+        <div style="font-size:12px;color:var(--gray-600);margin-top:2px">${countByEmployee[e.id] || 0} fire${(countByEmployee[e.id]||0) !== 1 ? 's' : ''} assigned</div>
+      </div>
+      <div style="display:flex;gap:6px;flex-shrink:0;align-items:center;flex-wrap:wrap;justify-content:flex-end">
+        <button class="btn btn-outline btn-sm" onclick="changeEmployeePinAction('${e.id}')">Change PIN</button>
+        ${e.active
+          ? `<button class="btn btn-outline btn-sm" onclick="deactivateEmployeeAction('${e.id}')" style="color:#ef4444;border-color:#fca5a5">Deactivate</button>`
+          : `<button class="btn btn-outline btn-sm" onclick="reactivateEmployeeAction('${e.id}')" style="color:var(--forest);border-color:var(--forest)">↩ Reactivate</button>`
+        }
+        <button class="btn btn-outline btn-sm" onclick="deleteEmployeeAction('${e.id}')" style="color:#ef4444;border-color:#fca5a5">Delete</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+async function callAdminEmployeesFn(payload) {
+  const { data: sess } = await _sb.auth.getSession();
+  const adminAccessToken = sess?.session?.access_token;
+  const resp = await fetch('/.netlify/functions/admin-employees', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...payload, adminAccessToken })
+  });
+  const data = await resp.json();
+  if (!resp.ok) throw new Error(data.error || 'Request failed.');
+  return data;
+}
+
+function showNewEmployeeForm() {
+  document.getElementById('new-employee-name').value = '';
+  document.getElementById('new-employee-pin').value = '';
+  document.getElementById('new-employee-role').value = 'staff';
+  document.getElementById('new-employee-error').textContent = '';
+  document.getElementById('new-employee-modal').style.display = 'flex';
+}
+function closeNewEmployeeForm() {
+  document.getElementById('new-employee-modal').style.display = 'none';
+}
+async function createEmployee() {
+  const name = document.getElementById('new-employee-name').value.trim();
+  const pin = document.getElementById('new-employee-pin').value.trim();
+  const role = document.getElementById('new-employee-role').value;
+  const errEl = document.getElementById('new-employee-error');
+  errEl.textContent = '';
+  if (!name || !pin) { errEl.textContent = 'Name and PIN are required.'; return; }
+  try {
+    await callAdminEmployeesFn({ action: 'create', name, pin, role });
+    closeNewEmployeeForm();
+    renderEmployeeManager();
+  } catch (err) {
+    errEl.textContent = err.message;
+  }
+}
+
+function _employeeName(id) {
+  const e = _employeeManagerCache.find(x => x.id === id);
+  return e ? e.name : 'this employee';
+}
+
+async function deactivateEmployeeAction(id) {
+  if (!confirm(`Deactivate ${_employeeName(id)}? Their PIN will stop working immediately, including on any device they're currently logged into.`)) return;
+  try {
+    await callAdminEmployeesFn({ action: 'deactivate', employeeId: id });
+    renderEmployeeManager();
+  } catch (err) { alert(err.message); }
+}
+async function reactivateEmployeeAction(id) {
+  try {
+    await callAdminEmployeesFn({ action: 'reactivate', employeeId: id });
+    renderEmployeeManager();
+  } catch (err) { alert(err.message); }
+}
+async function changeEmployeePinAction(id) {
+  const pin = prompt('Enter the new PIN (6 digits):');
+  if (!pin) return;
+  try {
+    await callAdminEmployeesFn({ action: 'changePin', employeeId: id, pin });
+    alert('PIN updated.');
+  } catch (err) { alert(err.message); }
+}
+async function deleteEmployeeAction(id) {
+  if (!confirm(`Permanently delete ${_employeeName(id)}? This removes their login and fire assignments. This cannot be undone.`)) return;
+  try {
+    await callAdminEmployeesFn({ action: 'delete', employeeId: id });
+    renderEmployeeManager();
+  } catch (err) { alert(err.message); }
 }
 
 // SEASON OVERVIEW
