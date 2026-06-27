@@ -837,6 +837,8 @@ body {
   <button class="nav-btn active" onclick="showScreen('daily-log')" id="nav-daily">Daily Log</button>
   <button class="nav-btn" onclick="showScreen('invoice')" id="nav-invoice">Invoice</button>
   <button class="nav-btn" onclick="showScreen('shiftlog')" id="nav-shiftlog">📋 Shift Log</button>
+  <button class="nav-btn" onclick="showScreen('expenses')" id="nav-expenses">💵 Expenses</button>
+  <button class="nav-btn" onclick="showScreen('expense-review')" id="nav-expense-review" style="display:none">✅ Review Expenses</button>
   <button class="nav-btn" onclick="showScreen('help')" id="nav-help">❓ Help</button>
   <button class="nav-btn" onclick="showAdminLogin()" id="nav-admin-login">🔐 Admin</button>
   <button class="nav-btn" onclick="showScreen('admin')" id="nav-rates" style="display:none">⚙ Rates</button>
@@ -849,6 +851,7 @@ body {
 
   <!-- ══ DAILY LOG SCREEN ══ -->
   <div class="screen active" id="screen-daily-log">
+    <div id="expense-reminder-banner" style="display:none"></div>
     <div class="flex-between" style="margin-bottom:20px">
       <div>
         <h1 style="font-family:'Barlow Condensed',sans-serif;font-size:26px;font-weight:700;letter-spacing:0.5px">Daily Job Log</h1>
@@ -981,6 +984,20 @@ body {
           <button class="btn btn-outline" style="font-size:13px" onclick="clearApiKey()">Clear</button>
           <span id="api-key-status" style="font-size:12px;color:var(--gray-500)"></span>
         </div>
+      </div>
+      <div class="card" style="margin-top:20px;padding:20px;max-width:520px">
+        <h3 style="font-size:14px;font-weight:700;margin-bottom:4px">Expense Settings</h3>
+        <p style="font-size:12px;color:var(--gray-500);margin-bottom:14px">Used by the Expenses screen for mileage reimbursement and sending approved reports to your HR/payroll contact.</p>
+        <div class="form-group" style="margin-bottom:12px">
+          <label>Mileage Rate ($/mile)</label>
+          <input type="number" id="rate-mileage" step="0.01" min="0" oninput="updateMileageRate(this.value)">
+        </div>
+        <div class="form-group" style="margin-bottom:8px">
+          <label>HR / Payroll Email</label>
+          <input type="email" id="hr-email-input" placeholder="payroll@example.com">
+        </div>
+        <button class="btn btn-primary" style="font-size:13px" onclick="saveHrEmail()">Save HR Email</button>
+        <span id="hr-email-status" style="font-size:12px;color:var(--gray-500);margin-left:8px"></span>
       </div>
       <div class="card" style="margin-top:20px;padding:20px">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
@@ -1269,6 +1286,27 @@ body {
     </div><!-- /grid -->
   </div>
 
+  <!-- ══ EXPENSES SCREEN ══ -->
+  <div class="screen" id="screen-expenses">
+    <div class="flex-between" style="margin-bottom:20px">
+      <div>
+        <h1 style="font-family:'Barlow Condensed',sans-serif;font-size:26px;font-weight:700;letter-spacing:0.5px">Expense Reports</h1>
+        <p class="text-sm text-muted mt-8">Submit lodging, mileage, and incidental expenses for reimbursement.</p>
+      </div>
+      <button class="btn btn-primary" onclick="startNewExpenseReport()">+ New Expense Report</button>
+    </div>
+    <div id="expense-reports-list"><!-- rendered by JS --></div>
+  </div>
+
+  <!-- ══ REVIEW EXPENSES SCREEN (admin only) ══ -->
+  <div class="screen" id="screen-expense-review">
+    <div style="margin-bottom:20px">
+      <h1 style="font-family:'Barlow Condensed',sans-serif;font-size:26px;font-weight:700;letter-spacing:0.5px">Review Expense Reports</h1>
+      <p class="text-sm text-muted mt-8">Submitted reports waiting for approval, across all employees.</p>
+    </div>
+    <div id="expense-review-list"><!-- rendered by JS --></div>
+  </div>
+
 </main>
 <!-- FIRE SELECTOR MODAL -->
 <div class="modal-overlay" id="fire-selector-modal" style="display:none">
@@ -1345,6 +1383,69 @@ body {
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="closeNewEmployeeForm()">Cancel</button>
       <button class="btn btn-primary" onclick="createEmployee()">Create</button>
+    </div>
+  </div>
+</div>
+<!-- ══════════ EXPENSE REPORT MODAL ══════════ -->
+<div class="modal-overlay" id="expense-report-modal" style="display:none">
+  <div class="modal" style="max-width:700px">
+    <div class="modal-header">
+      <div class="modal-title" id="expense-report-title">Expense Report</div>
+      <button onclick="closeExpenseReport()" style="background:none;border:none;color:var(--gray-400);font-size:20px;cursor:pointer">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="expense-report-reject-note" style="display:none;margin-bottom:14px;background:#fdecea;border:1px solid #f5c6cb;color:#7a1f1f;border-radius:var(--radius);padding:10px 14px;font-size:13px"></div>
+      <table class="orders-table" id="expense-line-items-table" style="display:none">
+        <thead>
+          <tr><th>Date</th><th>Category</th><th>Description</th><th>Amount</th><th></th></tr>
+        </thead>
+        <tbody id="expense-line-items-tbody"></tbody>
+      </table>
+      <div class="empty-state" id="expense-line-items-empty" style="display:none">
+        <div class="empty-icon">💵</div><p>No line items yet.</p>
+      </div>
+      <div style="margin-top:14px;text-align:right;font-weight:700;font-size:16px;color:var(--navy)" id="expense-report-total"></div>
+    </div>
+    <div class="modal-footer" id="expense-report-footer"><!-- rendered by JS --></div>
+  </div>
+</div>
+<!-- ══════════ EXPENSE LINE ITEM MODAL ══════════ -->
+<div class="modal-overlay" id="expense-line-item-modal" style="display:none;z-index:600">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-header">
+      <div class="modal-title">Add Expense</div>
+      <button onclick="closeExpenseLineItemForm()" style="background:none;border:none;color:var(--gray-400);font-size:20px;cursor:pointer">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group" style="margin-bottom:12px">
+        <label>Category</label>
+        <select id="exp-item-category" onchange="onExpenseCategoryChange()">
+          <option value="lodging">Lodging</option>
+          <option value="mileage">Mileage</option>
+          <option value="supplies">Supplies / Incidentals</option>
+          <option value="per_diem_difference">Per Diem Difference</option>
+          <option value="other">Other</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin-bottom:12px"><label>Date</label><input type="date" id="exp-item-date"></div>
+      <div id="exp-item-standard-fields">
+        <div class="form-group" style="margin-bottom:12px"><label>Company Name</label><input type="text" id="exp-item-company"></div>
+        <div class="form-group" style="margin-bottom:12px"><label>Invoice #</label><input type="text" id="exp-item-invoice"></div>
+        <div class="form-group" style="margin-bottom:12px"><label>Description</label><input type="text" id="exp-item-description"></div>
+        <div class="form-group" style="margin-bottom:12px"><label>Charge Account</label><input type="text" id="exp-item-charge-account"></div>
+        <div class="form-group" style="margin-bottom:12px"><label>Amount ($)</label><input type="number" step="0.01" min="0" id="exp-item-amount"></div>
+      </div>
+      <div id="exp-item-mileage-fields" style="display:none">
+        <div class="form-group" style="margin-bottom:12px"><label>Start Address</label><input type="text" id="exp-item-start-address" placeholder="e.g. Home address"></div>
+        <div class="form-group" style="margin-bottom:12px"><label>Finish Address</label><input type="text" id="exp-item-finish-address" placeholder="e.g. Incident location"></div>
+        <div class="form-group" style="margin-bottom:12px"><label>Miles</label><input type="number" step="0.1" min="0" id="exp-item-miles" oninput="updateMileageAmount()"></div>
+        <div style="font-size:12px;color:var(--gray-500)">Reimbursed at $<span id="exp-mileage-rate-display">0.00</span>/mile = $<span id="exp-mileage-amount-display">0.00</span></div>
+      </div>
+      <div id="exp-item-error" style="color:#ef4444;font-size:13px"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeExpenseLineItemForm()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveExpenseLineItem()">Save</button>
     </div>
   </div>
 </div>
@@ -1526,7 +1627,8 @@ const DEFAULT_RATES = {
     internet: 300,
     legal: 0.50,
     dayRate: 3455, addStaffRate: 300,
-  }
+  },
+  mileageRate: 0.70, // federal standard mileage rate — not agency-specific, lives outside standard/calfire
 };
 
 const DEFAULT_CHECKLISTS = {
@@ -2013,8 +2115,11 @@ function onLoginSuccess() {
   if (wrapEl) wrapEl.style.display = 'flex';
   const empBtn = document.getElementById('manage-employees-btn');
   if (empBtn) empBtn.style.display = state.isAdmin ? '' : 'none';
+  const reviewBtn = document.getElementById('nav-expense-review');
+  if (reviewBtn) reviewBtn.style.display = state.isAdmin ? '' : 'none';
   resetInactivityTimer();
   initAppAfterLogin();
+  loadMyExpenseReports(); // populates the reminder banner regardless of which screen loads first
 }
 
 async function logOut() {
@@ -2527,6 +2632,8 @@ function showScreen(name) {
   if (name === 'season')   renderSeasonOverview();
   if (name === 'shiftlog') renderShiftLog();
   if (name === 'help')     renderHelp();
+  if (name === 'expenses') loadMyExpenseReports();
+  if (name === 'expense-review') loadExpenseReviewList();
 }
 
 // ══════════ ORDER FORM ══════════
@@ -3516,11 +3623,32 @@ function renderRatesAdmin() {
 
   grid.innerHTML = makePanel('Forest Service / Federal Rates', standardItems, 'standard') +
                    makePanel('CalFire Rates', calfireItems, 'calfire');
+
+  const mileageInput = document.getElementById('rate-mileage');
+  if (mileageInput) mileageInput.value = (state.rates.mileageRate || 0).toFixed(2);
+  loadHrEmailSetting();
   renderErrorLog();
 }
 
 function updateRate(rateKey, field, value) {
   state.rates[rateKey][field] = parseFloat(value) || 0;
+}
+function updateMileageRate(value) {
+  state.rates.mileageRate = parseFloat(value) || 0;
+}
+
+async function loadHrEmailSetting() {
+  const input = document.getElementById('hr-email-input');
+  if (!input) return;
+  const { data } = await _sb.from('app_config').select('value').eq('key', 'hr_email').maybeSingle();
+  input.value = data?.value?.address || '';
+}
+async function saveHrEmail() {
+  const address = document.getElementById('hr-email-input').value.trim();
+  const statusEl = document.getElementById('hr-email-status');
+  const { error } = await _sb.from('app_config').upsert({ key: 'hr_email', value: { address } });
+  statusEl.textContent = error ? 'Could not save: ' + error.message : 'Saved.';
+  if (!error) setTimeout(() => { statusEl.textContent = ''; }, 2500);
 }
 
 function saveRates() {
@@ -3825,6 +3953,309 @@ async function deleteEmployeeAction(id) {
     await callAdminEmployeesFn({ action: 'delete', employeeId: id });
     renderEmployeeManager();
   } catch (err) { alert(err.message); }
+}
+
+// ══════════ EXPENSE REPORTS ══════════
+// Pay periods are biweekly, anchored to a known period start. Every period
+// is computed from this anchor rather than stored per-report, so the whole
+// company always agrees on where period boundaries fall.
+const PAY_PERIOD_ANCHOR = '2026-06-22';
+const PAY_PERIOD_LENGTH_DAYS = 14;
+const EXPENSE_DEADLINE_LEAD_DAYS = 2; // reports due this many days after the period closes
+
+function getPayPeriodFor(dateStr) {
+  const anchor = new Date(PAY_PERIOD_ANCHOR + 'T00:00:00');
+  const target = new Date(dateStr + 'T00:00:00');
+  const daysSince = Math.floor((target - anchor) / 86400000);
+  const periodIndex = Math.floor(daysSince / PAY_PERIOD_LENGTH_DAYS);
+  const start = new Date(anchor.getTime() + periodIndex * PAY_PERIOD_LENGTH_DAYS * 86400000);
+  const end = new Date(start.getTime() + (PAY_PERIOD_LENGTH_DAYS - 1) * 86400000);
+  return { start: start.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10) };
+}
+function getExpenseDeadline(periodEndStr) {
+  const end = new Date(periodEndStr + 'T00:00:00');
+  return new Date(end.getTime() + EXPENSE_DEADLINE_LEAD_DAYS * 86400000).toISOString().slice(0, 10);
+}
+
+const EXPENSE_CATEGORY_LABELS = { lodging: 'Lodging', mileage: 'Mileage', supplies: 'Supplies', per_diem_difference: 'Per Diem Diff.', other: 'Other' };
+
+let _myExpenseReports = [];
+let _activeExpenseReport = null; // { report, items } currently open in the modal
+
+async function loadMyExpenseReports() {
+  if (!state._session) return;
+  const { data: reports, error } = await _sb.from('expense_reports')
+    .select('*, expense_line_items(count)')
+    .eq('employee_id', state._session.employee.id)
+    .order('pay_period_start', { ascending: false });
+  if (error) { console.error('[Nomadic] Could not load expense reports:', error); return; }
+  _myExpenseReports = reports || [];
+  renderExpenseReportsList();
+  renderExpenseReminderBanner();
+}
+
+function renderExpenseReportsList() {
+  const container = document.getElementById('expense-reports-list');
+  if (!container) return;
+  if (!_myExpenseReports.length) {
+    container.innerHTML = '<div class="empty-state"><div class="empty-icon">💵</div><p>No expense reports yet.</p></div>';
+    return;
+  }
+  const statusColors = { draft: '#9A9690', submitted: '#f5a623', approved: '#2d7a4f', rejected: '#c0392b' };
+  container.innerHTML = _myExpenseReports.map(r => `
+    <div class="card" style="margin-bottom:10px;padding:14px 18px;display:flex;align-items:center;justify-content:space-between;cursor:pointer" onclick="openExpenseReport('${r.id}')">
+      <div>
+        <div style="font-weight:600;font-size:14px;color:var(--navy)">${formatDate(r.pay_period_start)} – ${formatDate(r.pay_period_end)}</div>
+        <div style="font-size:12px;color:var(--gray-500)">${r.expense_line_items?.[0]?.count || 0} item${(r.expense_line_items?.[0]?.count || 0) !== 1 ? 's' : ''}${r.submitted_at ? ' · Submitted ' + formatDate(r.submitted_at.slice(0, 10)) : ''}</div>
+      </div>
+      <span style="font-size:11px;font-weight:700;text-transform:uppercase;padding:3px 10px;border-radius:10px;color:#fff;background:${statusColors[r.status] || '#9A9690'}">${r.status}</span>
+    </div>
+  `).join('');
+}
+
+function renderExpenseReminderBanner() {
+  const el = document.getElementById('expense-reminder-banner');
+  if (!el) return;
+  const today = todayStr();
+  let html = '';
+  _myExpenseReports.forEach(r => {
+    if (r.status !== 'draft') return;
+    const itemCount = r.expense_line_items?.[0]?.count || 0;
+    if (itemCount === 0) return; // never nudge someone who hasn't entered anything
+    const deadline = getExpenseDeadline(r.pay_period_end);
+    const daysUntil = Math.round((new Date(deadline + 'T00:00:00') - new Date(today + 'T00:00:00')) / 86400000);
+    if (daysUntil > 2) return; // only start nudging close to the deadline
+    const overdue = daysUntil < 0;
+    html += `<div style="background:${overdue ? '#fdecea' : '#fff8e1'};border:1px solid ${overdue ? '#f5c6cb' : '#ffe082'};color:${overdue ? '#7a1f1f' : '#7c5c00'};border-radius:var(--radius);padding:10px 16px;margin-bottom:14px;font-size:13px">
+      ${overdue ? '⚠ Overdue —' : '⏰'} your expense report for ${formatDate(r.pay_period_start)}–${formatDate(r.pay_period_end)} is still a draft. ${overdue ? 'It was due ' + formatDate(deadline) + '.' : 'Submit by ' + formatDate(deadline) + '.'}
+      <a href="#" onclick="showScreen('expenses');openExpenseReport('${r.id}');return false;" style="font-weight:600;text-decoration:underline;margin-left:4px">Open it</a>
+    </div>`;
+  });
+  el.innerHTML = html;
+  el.style.display = html ? 'block' : 'none';
+}
+
+async function startNewExpenseReport() {
+  const period = getPayPeriodFor(todayStr());
+  // Reuse the existing report for this period if one already exists, rather than creating a duplicate.
+  const existing = _myExpenseReports.find(r => r.pay_period_start === period.start && r.pay_period_end === period.end);
+  if (existing) { openExpenseReport(existing.id); return; }
+  const { data, error } = await _sb.from('expense_reports').insert({
+    employee_id: state._session.employee.id,
+    incident_id: state._activeId && state._incidents.find(i => i.id === state._activeId) ? state._activeId : null,
+    pay_period_start: period.start,
+    pay_period_end: period.end,
+  }).select().single();
+  if (error) { alert('Could not start a new expense report: ' + error.message); return; }
+  await loadMyExpenseReports();
+  openExpenseReport(data.id);
+}
+
+async function openExpenseReport(id) {
+  const { data: report, error } = await _sb.from('expense_reports').select('*').eq('id', id).single();
+  if (error || !report) { alert('Could not load that report.'); return; }
+  const { data: items } = await _sb.from('expense_line_items').select('*').eq('expense_report_id', id).order('date');
+  _activeExpenseReport = { report, items: items || [] };
+  renderExpenseReportModal();
+  document.getElementById('expense-report-modal').style.display = 'flex';
+}
+function closeExpenseReport() {
+  document.getElementById('expense-report-modal').style.display = 'none';
+  _activeExpenseReport = null;
+}
+
+function renderExpenseReportModal() {
+  const { report, items } = _activeExpenseReport;
+  const isOwner = report.employee_id === state._session.employee.id;
+  const isDraft = report.status === 'draft';
+  document.getElementById('expense-report-title').textContent = `${formatDate(report.pay_period_start)} – ${formatDate(report.pay_period_end)}`;
+
+  const tbody = document.getElementById('expense-line-items-tbody');
+  const table = document.getElementById('expense-line-items-table');
+  const empty = document.getElementById('expense-line-items-empty');
+  if (!items.length) {
+    table.style.display = 'none'; empty.style.display = 'block';
+  } else {
+    table.style.display = 'table'; empty.style.display = 'none';
+    tbody.innerHTML = items.map(it => `
+      <tr>
+        <td class="text-sm text-mono">${formatDate(it.date)}</td>
+        <td class="text-sm">${EXPENSE_CATEGORY_LABELS[it.category] || it.category}</td>
+        <td class="text-sm">${escHtml(it.description || (it.category === 'mileage' ? (it.start_address || '') + ' → ' + (it.finish_address || '') : ''))}</td>
+        <td class="money">$${(it.amount || 0).toFixed(2)}</td>
+        <td>${isDraft && isOwner ? `<button class="btn btn-outline btn-sm" onclick="deleteExpenseLineItem('${it.id}')">Delete</button>` : ''}</td>
+      </tr>
+    `).join('');
+  }
+  const total = items.reduce((s, it) => s + (it.amount || 0), 0);
+  document.getElementById('expense-report-total').textContent = 'Total: $' + total.toFixed(2);
+
+  const rejectNote = document.getElementById('expense-report-reject-note');
+  if (report.status === 'rejected' && report.notes) {
+    rejectNote.style.display = 'block';
+    rejectNote.textContent = 'Returned by admin: ' + report.notes;
+  } else {
+    rejectNote.style.display = 'none';
+  }
+
+  const footer = document.getElementById('expense-report-footer');
+  let buttons = '<button class="btn btn-outline" onclick="closeExpenseReport()">Close</button>';
+  if (isDraft && isOwner) {
+    buttons += `<button class="btn btn-outline" onclick="openExpenseLineItemForm()">+ Add Expense</button>`;
+    if (items.length) buttons += `<button class="btn btn-primary" onclick="submitExpenseReport()">Submit Report</button>`;
+  }
+  // Admins can approve/reject anyone's report except their own, so a second admin always has to sign off.
+  if (state.isAdmin && report.status === 'submitted' && report.employee_id !== state._session.employee.id) {
+    buttons += `<button class="btn btn-outline" onclick="rejectExpenseReport()" style="color:#ef4444;border-color:#fca5a5">Reject</button>`;
+    buttons += `<button class="btn btn-primary" onclick="approveExpenseReport()">Approve</button>`;
+  }
+  footer.innerHTML = buttons;
+}
+
+function openExpenseLineItemForm() {
+  document.getElementById('exp-item-category').value = 'lodging';
+  document.getElementById('exp-item-date').value = todayStr();
+  document.getElementById('exp-item-company').value = '';
+  document.getElementById('exp-item-invoice').value = '';
+  document.getElementById('exp-item-description').value = '';
+  document.getElementById('exp-item-charge-account').value = '';
+  document.getElementById('exp-item-amount').value = '';
+  document.getElementById('exp-item-start-address').value = '';
+  document.getElementById('exp-item-finish-address').value = '';
+  document.getElementById('exp-item-miles').value = '';
+  document.getElementById('exp-item-error').textContent = '';
+  document.getElementById('exp-mileage-rate-display').textContent = (state.rates.mileageRate || 0).toFixed(2);
+  document.getElementById('exp-mileage-amount-display').textContent = '0.00';
+  onExpenseCategoryChange();
+  document.getElementById('expense-line-item-modal').style.display = 'flex';
+}
+function closeExpenseLineItemForm() {
+  document.getElementById('expense-line-item-modal').style.display = 'none';
+}
+function onExpenseCategoryChange() {
+  const isMileage = document.getElementById('exp-item-category').value === 'mileage';
+  document.getElementById('exp-item-standard-fields').style.display = isMileage ? 'none' : 'block';
+  document.getElementById('exp-item-mileage-fields').style.display = isMileage ? 'block' : 'none';
+}
+function updateMileageAmount() {
+  const miles = parseFloat(document.getElementById('exp-item-miles').value) || 0;
+  const rate = state.rates.mileageRate || 0;
+  document.getElementById('exp-mileage-amount-display').textContent = (miles * rate).toFixed(2);
+}
+
+async function saveExpenseLineItem() {
+  const category = document.getElementById('exp-item-category').value;
+  const date = document.getElementById('exp-item-date').value;
+  const errEl = document.getElementById('exp-item-error');
+  errEl.textContent = '';
+  if (!date) { errEl.textContent = 'Date is required.'; return; }
+
+  let payload = { expense_report_id: _activeExpenseReport.report.id, date, category };
+  if (category === 'mileage') {
+    const miles = parseFloat(document.getElementById('exp-item-miles').value) || 0;
+    if (!miles) { errEl.textContent = 'Enter the miles driven.'; return; }
+    payload.start_address = document.getElementById('exp-item-start-address').value.trim();
+    payload.finish_address = document.getElementById('exp-item-finish-address').value.trim();
+    payload.miles = miles;
+    payload.amount = miles * (state.rates.mileageRate || 0);
+    payload.receipt_status = 'none'; // mileage never needs a receipt
+  } else {
+    const amount = parseFloat(document.getElementById('exp-item-amount').value) || 0;
+    if (!amount) { errEl.textContent = 'Enter an amount.'; return; }
+    payload.company_name = document.getElementById('exp-item-company').value.trim();
+    payload.invoice_number = document.getElementById('exp-item-invoice').value.trim();
+    payload.description = document.getElementById('exp-item-description').value.trim();
+    payload.charge_account = document.getElementById('exp-item-charge-account').value.trim();
+    payload.amount = amount;
+    // No receipt-attach mechanism exists yet (that's Phase 3) — every non-mileage
+    // item honestly starts as "pending" since nothing can be collected yet.
+    payload.receipt_status = 'pending';
+  }
+  const { error } = await _sb.from('expense_line_items').insert(payload);
+  if (error) { errEl.textContent = error.message; return; }
+  closeExpenseLineItemForm();
+  await openExpenseReport(_activeExpenseReport.report.id);
+  await loadMyExpenseReports();
+}
+
+async function deleteExpenseLineItem(id) {
+  if (!confirm('Delete this expense item?')) return;
+  await _sb.from('expense_line_items').delete().eq('id', id);
+  await openExpenseReport(_activeExpenseReport.report.id);
+  await loadMyExpenseReports();
+}
+
+async function submitExpenseReport() {
+  if (!confirm('Submit this expense report? Amounts can no longer be changed after this.')) return;
+  const { error } = await _sb.from('expense_reports').update({ status: 'submitted', submitted_at: new Date().toISOString() }).eq('id', _activeExpenseReport.report.id);
+  if (error) { alert('Could not submit: ' + error.message); return; }
+  closeExpenseReport();
+  await loadMyExpenseReports();
+  alert('Expense report submitted. Your admin will review it.');
+}
+
+// ── Admin review ──
+async function loadExpenseReviewList() {
+  if (!state.isAdmin) return;
+  const { data: reports, error } = await _sb.from('expense_reports')
+    .select('*, expense_line_items(count), employees(name)')
+    .in('status', ['submitted', 'approved', 'rejected'])
+    .order('submitted_at', { ascending: false });
+  if (error) { console.error('[Nomadic] Could not load review list:', error); return; }
+  renderExpenseReviewList(reports || []);
+}
+
+function renderExpenseReviewList(reports) {
+  const container = document.getElementById('expense-review-list');
+  if (!container) return;
+  if (!reports.length) {
+    container.innerHTML = '<div class="empty-state"><div class="empty-icon">✅</div><p>Nothing submitted yet.</p></div>';
+    return;
+  }
+  const statusColors = { submitted: '#f5a623', approved: '#2d7a4f', rejected: '#c0392b' };
+  container.innerHTML = reports.map(r => `
+    <div class="card" style="margin-bottom:10px;padding:14px 18px;display:flex;align-items:center;justify-content:space-between;cursor:pointer" onclick="openExpenseReport('${r.id}')">
+      <div>
+        <div style="font-weight:600;font-size:14px;color:var(--navy)">${escHtml(r.employees?.name || 'Unknown')} · ${formatDate(r.pay_period_start)} – ${formatDate(r.pay_period_end)}</div>
+        <div style="font-size:12px;color:var(--gray-500)">${r.expense_line_items?.[0]?.count || 0} items · Submitted ${r.submitted_at ? formatDate(r.submitted_at.slice(0, 10)) : '—'}</div>
+      </div>
+      <span style="font-size:11px;font-weight:700;text-transform:uppercase;padding:3px 10px;border-radius:10px;color:#fff;background:${statusColors[r.status] || '#9A9690'}">${r.status}</span>
+    </div>
+  `).join('');
+}
+
+async function approveExpenseReport() {
+  const { report, items } = _activeExpenseReport;
+  const { error } = await _sb.from('expense_reports').update({ status: 'approved' }).eq('id', report.id);
+  if (error) { alert('Could not approve: ' + error.message); return; }
+  closeExpenseReport();
+  await loadExpenseReviewList();
+  openHrEmailDraft(report, items);
+}
+
+async function rejectExpenseReport() {
+  const note = prompt("Optional note explaining why this is being returned (the employee will see this):") || '';
+  const { error } = await _sb.from('expense_reports').update({ status: 'rejected', notes: note }).eq('id', _activeExpenseReport.report.id);
+  if (error) { alert('Could not reject: ' + error.message); return; }
+  closeExpenseReport();
+  await loadExpenseReviewList();
+}
+
+async function openHrEmailDraft(report, items) {
+  const { data: empRows } = await _sb.from('employees').select('name').eq('id', report.employee_id);
+  const empName = empRows?.[0]?.name || 'Employee';
+  const { data: cfg } = await _sb.from('app_config').select('value').eq('key', 'hr_email').maybeSingle();
+  const hrEmail = cfg?.value?.address || '';
+  let body = `Approved\n\nEmployee: ${empName}\nPay Period: ${formatDate(report.pay_period_start)} - ${formatDate(report.pay_period_end)}\n\n`;
+  items.forEach(it => {
+    const desc = it.description || ((it.start_address || '') + ' to ' + (it.finish_address || ''));
+    body += `${formatDate(it.date)} | ${EXPENSE_CATEGORY_LABELS[it.category] || it.category} | ${desc} | $${(it.amount || 0).toFixed(2)}\n`;
+  });
+  const total = items.reduce((s, it) => s + (it.amount || 0), 0);
+  body += `\nTotal: $${total.toFixed(2)}`;
+  const subject = `Approved Expense Report — ${empName} — ${formatDate(report.pay_period_start)} to ${formatDate(report.pay_period_end)}`;
+  const mailto = `mailto:${encodeURIComponent(hrEmail)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  window.open(mailto, '_blank');
 }
 
 // SEASON OVERVIEW
