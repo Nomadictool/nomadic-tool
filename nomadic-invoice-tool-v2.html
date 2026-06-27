@@ -1327,7 +1327,15 @@ body {
     </div>
     <div class="modal-body">
       <div class="form-group" style="margin-bottom:12px"><label>Name</label><input type="text" id="new-employee-name"></div>
-      <div class="form-group" style="margin-bottom:12px"><label>PIN (6 digits)</label><input type="password" inputmode="numeric" maxlength="6" id="new-employee-pin"></div>
+      <div class="form-group" style="margin-bottom:12px">
+        <label>PIN</label>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input type="text" inputmode="numeric" maxlength="6" id="new-employee-pin" readonly
+            style="font-family:'IBM Plex Mono',monospace;font-size:18px;letter-spacing:4px;text-align:center;background:var(--off-white)">
+          <button type="button" class="btn btn-outline btn-sm" onclick="regenerateNewEmployeePin()" title="Generate a different PIN">🎲</button>
+        </div>
+        <div style="font-size:12px;color:var(--gray-500);margin-top:4px">Auto-generated — you'll see it again after creating, so you can share it with them.</div>
+      </div>
       <div class="form-group" style="margin-bottom:12px">
         <label>Role</label>
         <select id="new-employee-role"><option value="staff">Staff</option><option value="admin">Admin</option></select>
@@ -3748,9 +3756,18 @@ async function callAdminEmployeesFn(payload) {
   return data;
 }
 
+// Generates a random 6-digit PIN, always zero-padded to 6 characters.
+function generatePin() {
+  return String(Math.floor(Math.random() * 1000000)).padStart(6, '0');
+}
+
+function regenerateNewEmployeePin() {
+  document.getElementById('new-employee-pin').value = generatePin();
+}
+
 function showNewEmployeeForm() {
   document.getElementById('new-employee-name').value = '';
-  document.getElementById('new-employee-pin').value = '';
+  document.getElementById('new-employee-pin').value = generatePin();
   document.getElementById('new-employee-role').value = 'staff';
   document.getElementById('new-employee-error').textContent = '';
   document.getElementById('new-employee-modal').style.display = 'flex';
@@ -3769,6 +3786,7 @@ async function createEmployee() {
     await callAdminEmployeesFn({ action: 'create', name, pin, role });
     closeNewEmployeeForm();
     renderEmployeeManager();
+    alert(`${name}'s PIN is ${pin}\n\nShare this with them so they can log in. Write it down now — the app won't show it again. If it gets lost, use "Change PIN" to issue them a new one.`);
   } catch (err) {
     errEl.textContent = err.message;
   }
@@ -3793,11 +3811,12 @@ async function reactivateEmployeeAction(id) {
   } catch (err) { alert(err.message); }
 }
 async function changeEmployeePinAction(id) {
-  const pin = prompt('Enter the new PIN (6 digits):');
-  if (!pin) return;
+  const name = _employeeName(id);
+  const pin = generatePin();
+  if (!confirm(`Issue ${name} a new PIN? Their current PIN will stop working immediately.`)) return;
   try {
     await callAdminEmployeesFn({ action: 'changePin', employeeId: id, pin });
-    alert('PIN updated.');
+    alert(`${name}'s new PIN is ${pin}\n\nShare this with them — their old PIN no longer works.`);
   } catch (err) { alert(err.message); }
 }
 async function deleteEmployeeAction(id) {
