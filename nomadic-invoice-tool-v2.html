@@ -1472,7 +1472,7 @@ body {
       <div class="modal-title" id="order-modal-title">Add Order</div>
       <button onclick="closeAddOrder()" style="background:none;border:none;color:var(--gray-400);font-size:20px;cursor:pointer">✕</button>
     </div>
-    <div class="modal-body">
+    <div class="modal-body" style="padding-top:20px;padding-bottom:20px">
       <div class="form-grid" style="margin-bottom:16px">
         <div class="form-group">
           <label>Department / Section</label>
@@ -1486,11 +1486,6 @@ body {
         </div>
       </div>
 
-      <!-- Quick-save row — lets user tap Add to Log without scrolling to the bottom -->
-      <div style="display:flex;justify-content:flex-end;margin-bottom:14px">
-        <button type="button" class="btn btn-primary btn-sm" onclick="saveOrder()" id="save-order-btn-top" style="font-size:12px;padding:7px 16px">Add to Log ↓</button>
-      </div>
-
       <div class="section-label">8.5 × 11</div>
       <div class="form-grid-4">
         <div class="form-group"><label>B&W (ea)</label><input type="number" class="qty-input" id="o-bw85" min="0" value="0"></div>
@@ -1498,7 +1493,7 @@ body {
         <div class="form-group"><label>Laminate (ea)</label><input type="number" class="qty-input" id="o-lam85" min="0" value="0"></div>
         <div class="form-group" id="wrap-color-bw"><label>Color Paper B&W (ea)</label><input type="number" class="qty-input" id="o-cpbw" min="0" value="0"></div>
       </div>
-      <div class="form-grid-4" style="margin-top:10px">
+      <div class="form-grid-4" style="margin-top:6px">
         <div class="form-group" id="wrap-color-color"><label>Color Paper Color (ea)</label><input type="number" class="qty-input" id="o-cpc" min="0" value="0"></div>
         <div class="form-group" id="wrap-bw-cs" style="display:none"><label>B&W Card Stock (ea)</label><input type="number" class="qty-input" id="o-bwcs" min="0" value="0"></div>
         <div class="form-group" id="wrap-color-cs" style="display:none"><label>Color Card Stock (ea)</label><input type="number" class="qty-input" id="o-colorcs" min="0" value="0"></div>
@@ -1513,16 +1508,12 @@ body {
         <div class="form-group" id="wrap-cp11" style="display:none"><label>Color Paper 11×17 (ea)</label><input type="number" class="qty-input" id="o-cp11" min="0" value="0"></div>
       </div>
 
-      <div class="section-label">8.5 × 14 (Legal)</div>
-      <div class="form-grid-4">
-        <div class="form-group"><label>B&W (ea)</label><input type="number" class="qty-input" id="o-legal" min="0" value="0"></div>
-      </div>
       <div class="section-label">Other Services</div>
       <div class="form-grid-4">
         <div class="form-group"><label>Scans (ea)</label><input type="number" class="qty-input" id="o-scans" min="0" value="0"></div>
         <div class="form-group"><label>Book Binding (ea)</label><input type="number" class="qty-input" id="o-bind" min="0" value="0"></div>
         <div class="form-group" id="wrap-internet" style="display:none"><label>Internet (days)</label><input type="number" class="qty-input" id="o-internet" min="0" value="0"></div>
-        <div class="form-group"></div>
+        <div class="form-group"><label>Legal 8.5×14 (ea)</label><input type="number" class="qty-input" id="o-legal" min="0" value="0"></div>
       </div>
 
       <!-- Plotting section -->
@@ -1559,11 +1550,7 @@ body {
       <div id="custom-items-list"></div>
       <button type="button" class="btn btn-outline btn-sm" onclick="addCustomItemRow()" style="margin-bottom:8px">+ Add Custom Item</button>
 
-      <!-- Live total -->
-      <div style="margin-top:18px;background:var(--navy);border-radius:var(--radius-lg);padding:12px 18px;display:flex;align-items:center;justify-content:space-between">
-        <span style="font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:var(--gray-400)">Order Total</span>
-        <span id="order-live-total" style="font-family:'IBM Plex Mono',monospace;font-size:22px;font-weight:500;color:var(--amber)">$0.00</span>
-      </div>
+      <span id="order-live-total" style="display:none"></span>
     </div>
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="closeAddOrder()">Cancel</button>
@@ -2665,7 +2652,6 @@ function openAddOrder(orderId) {
     if (!ord) return;
     document.getElementById('order-modal-title').textContent = 'Edit Order';
     document.getElementById('save-order-btn').textContent = 'Update Order';
-    document.getElementById('save-order-btn-top').textContent = 'Update Order ↓';
     document.getElementById('order-dept').value = ord.dept;
     document.getElementById('order-desc').value = ord.desc;
     const q = ord.quantities;
@@ -2686,7 +2672,6 @@ function openAddOrder(orderId) {
   } else {
     document.getElementById('order-modal-title').textContent = 'Add Order';
     document.getElementById('save-order-btn').textContent = 'Add to Log';
-    document.getElementById('save-order-btn-top').textContent = 'Add to Log ↓';
     resetOrderForm();
   }
   modal.style.display = 'flex';
