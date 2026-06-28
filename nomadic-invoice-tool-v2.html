@@ -1888,6 +1888,32 @@ async function persistToSupabase() {
   const saveTs = new Date().toISOString();
   try {
     if (state._incidents.length > 0) {
+      // Before overwriting, merge in anything that exists on the server but not in
+      // our local copy. A device's local snapshot can lag behind another device's
+      // more recent saves (e.g. it loaded before those saves happened, or has been
+      // open a while). Without this, pushing our snapshot as-is would silently
+      // erase whatever orders/notes/approvals someone else added in the meantime —
+      // this is the fix for the incident where an evening's worth of log entries
+      // was wiped by an unrelated, stale save from another session.
+      const ids = state._incidents.map(inc => inc.id);
+      const { data: remoteRows } = await _sb.from('incidents').select('id,data').in('id', ids);
+      const remoteById = {};
+      (remoteRows || []).forEach(r => { remoteById[r.id] = r.data; });
+
+      state._incidents.forEach(inc => {
+        const remote = remoteById[inc.id];
+        if (!remote) return;
+        ['orders', 'approvedDates', 'shiftNotes'].forEach(key => {
+          const remoteArr = remote[key];
+          if (!Array.isArray(remoteArr) || !remoteArr.length) return;
+          const localArr = Array.isArray(inc[key]) ? inc[key] : [];
+          const keyOf = item => (item && typeof item === 'object') ? item.id : item;
+          const localIds = new Set(localArr.map(keyOf));
+          const onlyRemote = remoteArr.filter(item => !localIds.has(keyOf(item)));
+          if (onlyRemote.length) inc[key] = [...localArr, ...onlyRemote];
+        });
+      });
+
       const rows = state._incidents.map(inc => ({
         id: inc.id,
         data: inc,
