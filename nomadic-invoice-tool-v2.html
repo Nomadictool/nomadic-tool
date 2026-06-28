@@ -1918,22 +1918,17 @@ async function loadFromSupabase() {
   ]);
   if (incRes.error) throw incRes.error;
   if (incRes.data && incRes.data.length > 0) {
-    // Compare Supabase data against the local backup — use whichever is newer
-    const supabaseIncs = incRes.data.map(r => r.data);
-    const backupRaw = localStorage.getItem('nomadic_local_backup');
-    const backupTs  = localStorage.getItem('nomadic_local_backup_ts');
-    const supabaseTs = incRes.data.reduce((max, r) => r.updated_at > max ? r.updated_at : max, '');
-    if (backupRaw && backupTs && backupTs > supabaseTs) {
-      // Local backup is newer — Supabase missed some saves, recover from backup
-      console.warn('[Nomadic] Local backup is newer than Supabase — recovering from backup');
-      try { state._incidents = JSON.parse(backupRaw); } catch(parseErr) { console.warn('[Nomadic] Backup parse failed, discarding:', parseErr); }
-      // Push the recovered data back up to Supabase immediately
-      persistToSupabase();
-    } else {
-      state._incidents = supabaseIncs;
-    }
-  } else {
-    // Supabase is empty — fall back to local backup if available
+    // Supabase (filtered by RLS to whatever this employee is allowed to see) is
+    // always the source of truth now that there's real multi-device, multi-employee
+    // access. A per-device localStorage backup has no idea what other employees
+    // saved from their own devices, so it must never be compared/swapped in here —
+    // doing so previously caused an admin's stale local snapshot to silently hide
+    // other incidents after login. Save failures are surfaced separately via the
+    // visible "SAVE FAILED" banner instead of being "fixed" by this kind of swap.
+    state._incidents = incRes.data.map(r => r.data);
+  } else if (state.isAdmin) {
+    // Supabase is genuinely empty (e.g. brand-new project) — one-time migration
+    // safety net for the admin's own device only, never for staff.
     const backupRaw = localStorage.getItem('nomadic_local_backup');
     if (backupRaw) {
       console.warn('[Nomadic] Supabase empty — recovering from local backup');
