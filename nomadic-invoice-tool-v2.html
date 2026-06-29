@@ -826,6 +826,8 @@ body {
     <button class="btn btn-outline btn-sm" onclick="openEmployeeManager()" id="manage-employees-btn" style="display:none; color:var(--gray-200); border-color:var(--navy-mid)">👥 Employees</button>
     <span id="sync-pulse" style="font-size:11px;color:#6aaa6e;opacity:0;transition:opacity 0.6s;letter-spacing:1px">⟳ SYNCED</span>
     <span id="last-saved-display" style="font-size:11px;color:var(--gray-400);letter-spacing:0.5px"></span>
+    <span id="local-backup-display" style="font-size:11px;color:var(--gray-400);letter-spacing:0.5px"></span>
+    <button class="btn btn-outline btn-sm" onclick="exportBackup()" title="Download a copy of this incident's data to this computer" style="font-size:11px;padding:5px 10px">📥 Backup</button>
     <span id="logged-in-as-display" style="display:none;font-size:12px;color:var(--gray-200);align-items:center;gap:8px">
       Logged in as <strong id="logged-in-as-name" style="color:var(--amber)">—</strong>
       <a href="#" onclick="logOut();return false;" style="color:var(--gray-400);text-decoration:underline;font-size:11px">Not you? Log out</a>
@@ -1775,6 +1777,7 @@ function saveState() {
     localStorage.setItem('nomadic_local_backup', JSON.stringify(state._incidents));
     localStorage.setItem('nomadic_local_backup_ts', new Date().toISOString());
     localStorage.setItem('nomadic_local_rates', JSON.stringify(state.rates));
+    refreshLocalBackupDisplay();
   } catch(e) { console.warn('localStorage backup failed:', e); }
   // Debounce Supabase writes: wait 5 s of inactivity before pushing
   clearTimeout(_supabaseDebounceTimer);
@@ -2116,6 +2119,22 @@ function refreshLastSavedDisplay() {
 // Update the "X min ago" label every 60 seconds
 setInterval(refreshLastSavedDisplay, 60000);
 
+// This device's own local backup — written synchronously on every change, so
+// it's the thing that's actually present even when the "Saved" indicator above
+// shows an error. Shown to everyone so the team can see for themselves that a
+// copy is sitting on this computer, not just trust an invisible mechanism.
+function refreshLocalBackupDisplay() {
+  const el = document.getElementById('local-backup-display');
+  if (!el) return;
+  const ts = localStorage.getItem('nomadic_local_backup_ts');
+  if (!ts) { el.textContent = ''; return; }
+  const mins = Math.round((Date.now() - new Date(ts).getTime()) / 60000);
+  if (mins < 1) el.textContent = 'Local backup: just now';
+  else if (mins === 1) el.textContent = 'Local backup: 1 min ago';
+  else el.textContent = `Local backup: ${mins} min ago`;
+}
+setInterval(refreshLocalBackupDisplay, 60000);
+
 // ══════════ AUTH (PIN LOGIN) ══════════
 async function submitPinLogin() {
   const pinInput = document.getElementById('pin-login-input');
@@ -2186,6 +2205,7 @@ function onLoginSuccess() {
   const reviewBtn = document.getElementById('nav-expense-review');
   if (reviewBtn) reviewBtn.style.display = state.isAdmin ? '' : 'none';
   resetInactivityTimer();
+  refreshLocalBackupDisplay();
   initAppAfterLogin();
   loadMyExpenseReports(); // populates the reminder banner regardless of which screen loads first
 }
