@@ -2058,6 +2058,22 @@ function subscribeRealtime() {
         }
         const idx = state._incidents.findIndex(i => i.id === incoming.id);
         if (idx >= 0) {
+          // Merge rather than replace: this echo (often our own save bouncing back)
+          // reflects a snapshot from whenever that save started, which can already
+          // be stale if anything was typed locally while it was in flight. A blind
+          // replace here would silently erase those newer local entries — this is
+          // the fix for orders vanishing in real time on the same device, mid-session.
+          const current = state._incidents[idx];
+          ['orders', 'approvedDates', 'shiftNotes'].forEach(key => {
+            const incomingArr = incoming[key];
+            if (!Array.isArray(incomingArr) || !incomingArr.length) return;
+            const currentArr = Array.isArray(current[key]) ? current[key] : [];
+            if (!currentArr.length) return;
+            const keyOf = item => (item && typeof item === 'object') ? item.id : item;
+            const incomingIds = new Set(incomingArr.map(keyOf));
+            const onlyCurrent = currentArr.filter(item => !incomingIds.has(keyOf(item)));
+            if (onlyCurrent.length) incoming[key] = [...incomingArr, ...onlyCurrent];
+          });
           state._incidents[idx] = incoming;
         } else {
           state._incidents.push(incoming);
