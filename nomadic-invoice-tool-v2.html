@@ -1895,24 +1895,35 @@ async function persistToSupabase() {
       // erase whatever orders/notes/approvals someone else added in the meantime —
       // this is the fix for the incident where an evening's worth of log entries
       // was wiped by an unrelated, stale save from another session.
-      const ids = state._incidents.map(inc => inc.id);
-      const { data: remoteRows } = await _sb.from('incidents').select('id,data').in('id', ids);
-      const remoteById = {};
-      (remoteRows || []).forEach(r => { remoteById[r.id] = r.data; });
+      //
+      // This merge step is best-effort: on a weak connection, this extra read is
+      // one more thing that can fail. If it does, don't let that sink the whole
+      // save — fall back to saving our local copy directly rather than giving up
+      // entirely, since a plain save that succeeds beats a "safer" save that never
+      // happens at all.
+      try {
+        const ids = state._incidents.map(inc => inc.id);
+        const { data: remoteRows, error: fetchErr } = await _sb.from('incidents').select('id,data').in('id', ids);
+        if (fetchErr) throw fetchErr;
+        const remoteById = {};
+        (remoteRows || []).forEach(r => { remoteById[r.id] = r.data; });
 
-      state._incidents.forEach(inc => {
-        const remote = remoteById[inc.id];
-        if (!remote) return;
-        ['orders', 'approvedDates', 'shiftNotes'].forEach(key => {
-          const remoteArr = remote[key];
-          if (!Array.isArray(remoteArr) || !remoteArr.length) return;
-          const localArr = Array.isArray(inc[key]) ? inc[key] : [];
-          const keyOf = item => (item && typeof item === 'object') ? item.id : item;
-          const localIds = new Set(localArr.map(keyOf));
-          const onlyRemote = remoteArr.filter(item => !localIds.has(keyOf(item)));
-          if (onlyRemote.length) inc[key] = [...localArr, ...onlyRemote];
+        state._incidents.forEach(inc => {
+          const remote = remoteById[inc.id];
+          if (!remote) return;
+          ['orders', 'approvedDates', 'shiftNotes'].forEach(key => {
+            const remoteArr = remote[key];
+            if (!Array.isArray(remoteArr) || !remoteArr.length) return;
+            const localArr = Array.isArray(inc[key]) ? inc[key] : [];
+            const keyOf = item => (item && typeof item === 'object') ? item.id : item;
+            const localIds = new Set(localArr.map(keyOf));
+            const onlyRemote = remoteArr.filter(item => !localIds.has(keyOf(item)));
+            if (onlyRemote.length) inc[key] = [...localArr, ...onlyRemote];
+          });
         });
-      });
+      } catch (mergeErr) {
+        console.warn('[Nomadic] Pre-save merge check failed, saving local copy directly:', mergeErr);
+      }
 
       const rows = state._incidents.map(inc => ({
         id: inc.id,
@@ -1932,6 +1943,7 @@ async function persistToSupabase() {
     showSyncPulse('ok');
   } catch(err) {
     console.error('Supabase persist error:', err);
+    logError('save-failed', err.message || String(err), '', '', '', err.stack);
     showSyncPulse('error');
   }
 }
@@ -1945,13 +1957,45 @@ async function loadFromSupabase() {
   if (incRes.error) throw incRes.error;
   if (incRes.data && incRes.data.length > 0) {
     // Supabase (filtered by RLS to whatever this employee is allowed to see) is
-    // always the source of truth now that there's real multi-device, multi-employee
-    // access. A per-device localStorage backup has no idea what other employees
-    // saved from their own devices, so it must never be compared/swapped in here —
-    // doing so previously caused an admin's stale local snapshot to silently hide
-    // other incidents after login. Save failures are surfaced separately via the
-    // visible "SAVE FAILED" banner instead of being "fixed" by this kind of swap.
-    state._incidents = incRes.data.map(r => r.data);
+    // the source of truth for WHICH incidents exist and who can see them — we
+    // never swap the whole list for a local backup, since a stale device has no
+    // idea what other employees saved from their own devices (that's the bug
+    // that hid Pocket Fire from an admin earlier).
+    //
+    // But within an incident this device still owns, merge in anything from its
+    // OWN local backup that Supabase is missing — e.g. if an earlier save attempt
+    // failed (bad connection) the data never left this device, but it's still
+    // sitting safely in localStorage. Recovering it here, rather than silently
+    // discarding it on reload, is what should have protected the night an
+    // employee's re-entered log was lost to a run of failed saves.
+    const supabaseIncs = incRes.data.map(r => r.data);
+    const backupRaw = localStorage.getItem('nomadic_local_backup');
+    let backupIncs = null;
+    if (backupRaw) { try { backupIncs = JSON.parse(backupRaw); } catch(e) { console.warn('[Nomadic] Local backup parse failed, skipping recovery check:', e); } }
+    let recovered = false;
+    if (backupIncs) {
+      const backupById = {};
+      backupIncs.forEach(inc => { backupById[inc.id] = inc; });
+      supabaseIncs.forEach(inc => {
+        const backup = backupById[inc.id];
+        if (!backup) return;
+        ['orders', 'approvedDates', 'shiftNotes'].forEach(key => {
+          const backupArr = backup[key];
+          if (!Array.isArray(backupArr) || !backupArr.length) return;
+          const remoteArr = Array.isArray(inc[key]) ? inc[key] : [];
+          const keyOf = item => (item && typeof item === 'object') ? item.id : item;
+          const remoteIds = new Set(remoteArr.map(keyOf));
+          const onlyLocal = backupArr.filter(item => !remoteIds.has(keyOf(item)));
+          if (onlyLocal.length) {
+            inc[key] = [...remoteArr, ...onlyLocal];
+            recovered = true;
+            console.warn(`[Nomadic] Recovered ${onlyLocal.length} unsynced ${key} from local backup for incident ${inc.id}`);
+          }
+        });
+      });
+    }
+    state._incidents = supabaseIncs;
+    if (recovered) persistToSupabase(); // push the recovered entries back up right away
   } else if (state.isAdmin) {
     // Supabase is genuinely empty (e.g. brand-new project) — one-time migration
     // safety net for the admin's own device only, never for staff.
