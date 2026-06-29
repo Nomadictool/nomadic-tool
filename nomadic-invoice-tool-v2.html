@@ -1841,12 +1841,24 @@ function updateErrorBadge() {
   } catch(e) {}
 }
 
-function renderErrorLog() {
+async function renderErrorLog() {
   const container = document.getElementById('error-log-entries');
   if (!container) return;
   try {
     const raw = localStorage.getItem('nomadic_error_log');
-    const log = raw ? JSON.parse(raw) : [];
+    const localLog = raw ? JSON.parse(raw) : [];
+    // Merge in the Supabase-synced copy too, so admin sees errors from every
+    // device, not just whichever one they're currently sitting at.
+    let remoteLog = [];
+    try {
+      const { data } = await _sb.from('app_config').select('value').eq('key', 'error_log').maybeSingle();
+      if (Array.isArray(data?.value)) remoteLog = data.value;
+    } catch (e) { /* best-effort — local log still shows even if this fails */ }
+    const seen = new Set();
+    const log = [...localLog, ...remoteLog]
+      .filter(e => { const k = e.ts + '|' + e.msg; if (seen.has(k)) return false; seen.add(k); return true; })
+      .sort((a, b) => (a.ts < b.ts ? 1 : -1))
+      .slice(0, MAX_ERROR_LOG);
     if (!log.length) {
       container.innerHTML = '<div style="color:var(--gray-400);font-size:13px;padding:8px 0">No errors logged. &#127881;</div>';
       return;
