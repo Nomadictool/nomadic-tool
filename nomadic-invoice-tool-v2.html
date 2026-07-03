@@ -843,6 +843,7 @@ body {
     <button class="btn btn-outline btn-sm" onclick="openFireSelector()" id="switch-fire-btn" style="display:none; color:var(--amber); border-color:var(--amber)">⇄ Switch Fire</button>
     <button class="btn btn-outline btn-sm" onclick="openIncidentManager()" id="manage-incidents-btn" style="display:none; color:var(--gray-200); border-color:var(--navy-mid)">⚙ Incidents</button>
     <button class="btn btn-outline btn-sm" onclick="openEmployeeManager()" id="manage-employees-btn" style="display:none; color:var(--gray-200); border-color:var(--navy-mid)">👥 Employees</button>
+    <button class="btn btn-outline btn-sm" onclick="openSeasonReport()" id="season-report-btn" style="display:none; color:var(--gray-200); border-color:var(--navy-mid)">📊 Reports</button>
     <span id="sync-pulse" style="font-size:11px;color:#6aaa6e;opacity:0;transition:opacity 0.6s;letter-spacing:1px">⟳ SYNCED</span>
     <span id="last-saved-display" style="font-size:11px;color:var(--gray-400);letter-spacing:0.5px"></span>
     <span id="local-backup-display" style="font-size:11px;color:var(--gray-400);letter-spacing:0.5px"></span>
@@ -1628,6 +1629,26 @@ body {
         <button class="btn btn-outline" onclick="closeRosterEntry()">Cancel</button>
         <button class="btn btn-primary" onclick="saveRosterEntry()">Save</button>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ SEASON REPORT MODAL ══════════ -->
+<div class="modal-overlay" id="season-report-modal" style="display:none;z-index:600">
+  <div class="modal" style="max-width:860px;width:95%;max-height:88vh;display:flex;flex-direction:column">
+    <div class="modal-header" style="flex-shrink:0">
+      <div class="modal-title">📊 Season Report</div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <label style="font-size:13px;color:var(--gray-400)">Year:</label>
+        <select id="report-year" onchange="renderSeasonReport(this.value)"
+          style="padding:4px 8px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:13px;font-family:inherit;background:white">
+        </select>
+        <button class="btn btn-outline btn-sm" onclick="printSeasonReport()" style="color:var(--gray-200);border-color:var(--navy-mid)">🖨 Print</button>
+        <button onclick="closeSeasonReport()" style="background:none;border:none;color:var(--gray-400);font-size:20px;cursor:pointer;margin-left:4px">✕</button>
+      </div>
+    </div>
+    <div class="modal-body" id="season-report-body" style="overflow-y:auto;flex:1">
+      <div style="color:var(--gray-400);font-size:13px">Loading…</div>
     </div>
   </div>
 </div>
@@ -2485,6 +2506,8 @@ function onLoginSuccess() {
   if (wrapEl) wrapEl.style.display = 'flex';
   const empBtn = document.getElementById('manage-employees-btn');
   if (empBtn) empBtn.style.display = state.isAdmin ? '' : 'none';
+  const rptBtn = document.getElementById('season-report-btn');
+  if (rptBtn) rptBtn.style.display = state.isAdmin ? '' : 'none';
   const reviewBtn = document.getElementById('nav-expense-review');
   if (reviewBtn) reviewBtn.style.display = state.isAdmin ? '' : 'none';
   resetInactivityTimer();
@@ -6110,6 +6133,220 @@ function renderTransportEntries() {
       <div class="form-group"><label>Notes</label><input type="text" id="tp-notes-${t.id}" value="${escHtml(t.notes||'')}" placeholder="Optional"></div>
     </div>
   `).join('');
+}
+
+// ══════════ SEASON REPORT ══════════
+var _reportYear = '';
+var _reportStats = null;
+
+function openSeasonReport() {
+  if (!state.isAdmin) return;
+  const allYears = new Set([new Date().getFullYear().toString()]);
+  state._incidents.forEach(e => {
+    (e.orders || []).forEach(o => { if (o.date) allYears.add(o.date.substring(0,4)); });
+  });
+  const curYear = new Date().getFullYear().toString();
+  const sel = document.getElementById('report-year');
+  sel.innerHTML = [...allYears].sort((a,b) => b-a).map(y =>
+    `<option value="${y}"${y===curYear?' selected':''}>${y}</option>`
+  ).join('');
+  document.getElementById('season-report-modal').style.display = 'flex';
+  renderSeasonReport(sel.value);
+}
+
+function closeSeasonReport() {
+  document.getElementById('season-report-modal').style.display = 'none';
+}
+
+function computeSeasonStats(year) {
+  year = String(year);
+  _reportYear = year;
+  const incStats = [];
+  const monthRevenue = new Array(12).fill(0);
+  const monthDays = new Array(12).fill(0);
+  state._incidents.forEach(e => {
+    if (!e.incident) return;
+    const orders = (e.orders || []).filter(o => o.date && o.date.startsWith(year));
+    if (!orders.length) return;
+    const agency = e.incident.agency || 'federal';
+    const uniqueDates = [...new Set(orders.map(o => o.date))];
+    let incRevenue = 0;
+    const datesByMonth = {};
+    orders.forEach(o => {
+      const rev = calcOrderTotal(o, agency);
+      incRevenue += rev;
+      const m = parseInt(o.date.substring(5,7)) - 1;
+      monthRevenue[m] += rev;
+      if (!datesByMonth[m]) datesByMonth[m] = new Set();
+      datesByMonth[m].add(o.date);
+    });
+    Object.entries(datesByMonth).forEach(([m, ds]) => { monthDays[parseInt(m)] += ds.size; });
+    incStats.push({
+      name: e.incident.name || 'Unnamed Fire',
+      eNumber: e.incident.eNumber || '',
+      agency,
+      unit: e.incident.unit || '—',
+      days: uniqueDates.length,
+      revenue: incRevenue,
+    });
+  });
+  const totalRevenue = incStats.reduce((s,i) => s+i.revenue, 0);
+  const totalDays = incStats.reduce((s,i) => s+i.days, 0);
+  const dailyAvg = totalDays > 0 ? totalRevenue / totalDays : 0;
+  const unitMap = {};
+  incStats.forEach(i => {
+    if (!unitMap[i.unit]) unitMap[i.unit] = { fires:0, days:0, revenue:0 };
+    unitMap[i.unit].fires++;
+    unitMap[i.unit].days += i.days;
+    unitMap[i.unit].revenue += i.revenue;
+  });
+  return _reportStats = { year, incStats, monthRevenue, monthDays, totalRevenue, totalDays, dailyAvg, unitMap };
+}
+
+function renderSeasonReport(year) {
+  const body = document.getElementById('season-report-body');
+  if (!body) return;
+  const s = computeSeasonStats(year);
+  const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const agLbl = a => a==='calfire'?'CAL FIRE':(a==='federal'?'US FS':'State');
+  const fmt$ = n => '$'+n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const th = t => `<th style="text-align:left;padding:8px 10px;border-bottom:2px solid var(--gray-200);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--gray-400)">${t}</th>`;
+  const thr = t => `<th style="text-align:right;padding:8px 10px;border-bottom:2px solid var(--gray-200);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--gray-400)">${t}</th>`;
+  const td = (v,bold) => `<td style="padding:8px 10px;border-bottom:1px solid var(--gray-100);${bold?'font-weight:600':''}">${v}</td>`;
+  const tdr = (v,mono) => `<td style="padding:8px 10px;border-bottom:1px solid var(--gray-100);text-align:right;${mono?'font-family:\'IBM Plex Mono\',monospace;font-weight:600':'color:var(--gray-500)'}">${v}</td>`;
+
+  if (!s.incStats.length) {
+    body.innerHTML = `<div style="text-align:center;padding:48px;color:var(--gray-400);font-size:14px">No billing data for ${escHtml(s.year)}.</div>`;
+    return;
+  }
+
+  body.innerHTML = `
+  <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:28px">
+    <div style="background:var(--navy);color:white;border-radius:var(--radius);padding:16px;text-align:center">
+      <div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;opacity:.7;margin-bottom:6px">Season Revenue</div>
+      <div style="font-size:20px;font-weight:700;font-family:'IBM Plex Mono',monospace">${fmt$(s.totalRevenue)}</div>
+    </div>
+    <div style="background:var(--forest);color:white;border-radius:var(--radius);padding:16px;text-align:center">
+      <div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;opacity:.7;margin-bottom:6px">Total Days</div>
+      <div style="font-size:20px;font-weight:700">${s.totalDays}</div>
+    </div>
+    <div style="background:var(--off-white);border:1px solid var(--gray-200);border-radius:var(--radius);padding:16px;text-align:center">
+      <div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--gray-400);margin-bottom:6px">Daily Average</div>
+      <div style="font-size:20px;font-weight:700;font-family:'IBM Plex Mono',monospace">${fmt$(s.dailyAvg)}</div>
+    </div>
+    <div style="background:var(--off-white);border:1px solid var(--gray-200);border-radius:var(--radius);padding:16px;text-align:center">
+      <div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--gray-400);margin-bottom:6px">Incidents</div>
+      <div style="font-size:20px;font-weight:700">${s.incStats.length}</div>
+    </div>
+  </div>
+
+  <div class="section-label" style="margin-bottom:10px">Monthly Totals</div>
+  <table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:28px">
+    <thead><tr style="background:var(--off-white)">${th('Month')}${thr('Days')}${thr('Revenue')}</tr></thead>
+    <tbody>
+      ${MONTHS.map((m,i) => s.monthRevenue[i]>0 ? `<tr>
+        ${td(m,true)}${tdr(s.monthDays[i],false)}${tdr(fmt$(s.monthRevenue[i]),true)}
+      </tr>` : '').join('')}
+      <tr style="background:var(--off-white)">
+        <td style="padding:8px 10px;font-weight:700">Total</td>
+        <td style="padding:8px 10px;text-align:right;font-weight:700">${s.totalDays}</td>
+        <td style="padding:8px 10px;text-align:right;font-weight:700;font-family:'IBM Plex Mono',monospace">${fmt$(s.totalRevenue)}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="section-label" style="margin-bottom:10px">Revenue by Incident</div>
+  <table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:28px">
+    <thead><tr style="background:var(--off-white)">${th('Fire')}${th('Agency')}${th('Unit')}${thr('Days')}${thr('Revenue')}</tr></thead>
+    <tbody>
+      ${[...s.incStats].sort((a,b)=>b.revenue-a.revenue).map(i=>`<tr>
+        ${td(escHtml(i.name)+(i.eNumber?`<span style="font-size:11px;color:var(--gray-400);margin-left:6px">${escHtml(i.eNumber)}</span>`:''),true)}
+        ${td(agLbl(i.agency),false)}${td(escHtml(i.unit),false)}
+        ${tdr(i.days,false)}${tdr(fmt$(i.revenue),true)}
+      </tr>`).join('')}
+    </tbody>
+  </table>
+
+  ${Object.keys(s.unitMap).length>1 ? `
+  <div class="section-label" style="margin-bottom:10px">Revenue by Unit</div>
+  <table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:16px">
+    <thead><tr style="background:var(--off-white)">${th('Unit')}${thr('Fires')}${thr('Days')}${thr('Revenue')}</tr></thead>
+    <tbody>
+      ${Object.entries(s.unitMap).sort(([,a],[,b])=>b.revenue-a.revenue).map(([unit,u])=>`<tr>
+        ${td(escHtml(unit),true)}${tdr(u.fires,false)}${tdr(u.days,false)}${tdr(fmt$(u.revenue),true)}
+      </tr>`).join('')}
+    </tbody>
+  </table>` : ''}`;
+}
+
+function printSeasonReport() {
+  const s = _reportStats || computeSeasonStats(_reportYear || new Date().getFullYear().toString());
+  const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const agLbl = a => a==='calfire'?'CAL FIRE':(a==='federal'?'US FS':'State');
+  const fmt$ = n => '$'+n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
+  let html = `<html><head><title>Season Report ${s.year}</title><style>
+    body{font-family:Arial,sans-serif;padding:28px;font-size:13px;max-width:900px;color:#222}
+    h1{font-size:20px;margin:0 0 4px}
+    .sub{color:#888;font-size:12px;margin:0 0 24px}
+    .cards{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:28px}
+    .card{border:2px solid #ddd;border-radius:6px;padding:14px;text-align:center}
+    .card.dark{background:#1e2a4a;color:white;border-color:#1e2a4a}
+    .card.green{background:#2d5a3d;color:white;border-color:#2d5a3d}
+    .card-lbl{font-size:10px;text-transform:uppercase;letter-spacing:.07em;opacity:.75;margin-bottom:5px}
+    .card-val{font-size:20px;font-weight:700;font-family:monospace}
+    .sec{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#888;border-bottom:2px solid #eee;padding-bottom:4px;margin:24px 0 10px}
+    table{width:100%;border-collapse:collapse;margin-bottom:28px}
+    th{text-align:left;padding:7px 10px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#888;border-bottom:2px solid #ddd;background:#f9f9f9}
+    th.r,td.r{text-align:right}
+    td{padding:7px 10px;border-bottom:1px solid #f0f0f0}
+    .mono{font-family:monospace;font-weight:600}
+    .gray{color:#888}
+    tr.total td{font-weight:700;background:#f9f9f9}
+    @media print{button{display:none}}
+  </style></head><body>
+  <h1>Season Report — ${s.year}</h1>
+  <p class="sub">Nomadic Clerical Support &mdash; Generated ${todayStr()}</p>
+  <div class="cards">
+    <div class="card dark"><div class="card-lbl">Season Revenue</div><div class="card-val">${fmt$(s.totalRevenue)}</div></div>
+    <div class="card green"><div class="card-lbl">Total Days</div><div class="card-val">${s.totalDays}</div></div>
+    <div class="card"><div class="card-lbl">Daily Average</div><div class="card-val">${fmt$(s.dailyAvg)}</div></div>
+    <div class="card"><div class="card-lbl">Incidents</div><div class="card-val">${s.incStats.length}</div></div>
+  </div>
+  <div class="sec">Monthly Totals</div>
+  <table>
+    <thead><tr><th>Month</th><th class="r">Days</th><th class="r">Revenue</th></tr></thead>
+    <tbody>
+      ${MONTHS.map((m,i) => s.monthRevenue[i]>0 ? `<tr><td><b>${m}</b></td><td class="r gray">${s.monthDays[i]}</td><td class="r mono">${fmt$(s.monthRevenue[i])}</td></tr>` : '').join('')}
+      <tr class="total"><td>Total</td><td class="r">${s.totalDays}</td><td class="r mono">${fmt$(s.totalRevenue)}</td></tr>
+    </tbody>
+  </table>
+  <div class="sec">Revenue by Incident</div>
+  <table>
+    <thead><tr><th>Fire</th><th>Agency</th><th>Unit</th><th class="r">Days</th><th class="r">Revenue</th></tr></thead>
+    <tbody>
+      ${[...s.incStats].sort((a,b)=>b.revenue-a.revenue).map(i=>`<tr>
+        <td><b>${escHtml(i.name)}</b>${i.eNumber?` <span class="gray">${escHtml(i.eNumber)}</span>`:''}</td>
+        <td class="gray">${agLbl(i.agency)}</td><td class="gray">${escHtml(i.unit)}</td>
+        <td class="r gray">${i.days}</td><td class="r mono">${fmt$(i.revenue)}</td>
+      </tr>`).join('')}
+    </tbody>
+  </table>
+  ${Object.keys(s.unitMap).length>1 ? `
+  <div class="sec">Revenue by Unit</div>
+  <table>
+    <thead><tr><th>Unit</th><th class="r">Fires</th><th class="r">Days</th><th class="r">Revenue</th></tr></thead>
+    <tbody>
+      ${Object.entries(s.unitMap).sort(([,a],[,b])=>b.revenue-a.revenue).map(([unit,u])=>`<tr>
+        <td><b>${escHtml(unit)}</b></td><td class="r gray">${u.fires}</td><td class="r gray">${u.days}</td><td class="r mono">${fmt$(u.revenue)}</td>
+      </tr>`).join('')}
+    </tbody>
+  </table>` : ''}
+  <br><button onclick="window.print()">Print / Save as PDF</button>
+  </body></html>`;
+  const w = window.open('','_blank');
+  if (!w) { alert('Pop-ups are blocked. Please allow pop-ups to print.'); return; }
+  w.document.write(html);
+  w.document.close();
 }
 
 function deleteInventoryItem(id) {
