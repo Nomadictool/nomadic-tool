@@ -638,6 +638,8 @@ body {
 .inv-flag .f-order.active{background:#dc2626;color:white}
 .inv-delete{background:none;border:none;cursor:pointer;color:var(--gray-300);font-size:14px;padding:4px}
 .inv-delete:hover{color:var(--red,#dc2626)}
+.inv-unit-header{font-family:'Barlow Condensed',sans-serif;font-size:20px;font-weight:700;color:var(--forest);letter-spacing:.3px}
+.inv-last-updated{font-size:11px;color:var(--gray-400);margin-top:3px;margin-bottom:14px;font-style:italic}
 .inv-custom-label{font-size:11px;background:var(--gray-100);color:var(--gray-500);padding:1px 5px;border-radius:4px;margin-left:6px}
 @keyframes spin{to{transform:rotate(360deg)}}
 </style>
@@ -1105,6 +1107,11 @@ body {
         </div>
         <div id="inv-send-note" style="display:none;margin-top:8px;font-size:12px;color:#065f46;background:#d1fae5;border-radius:6px;padding:6px 10px;font-weight:600"></div>
         <div id="inv-alert-list" style="margin-top:10px;font-size:12px;color:#92400e;line-height:1.8"></div>
+      </div>
+      <!-- Unit header -->
+      <div style="margin-bottom:14px">
+        <div class="inv-unit-header" id="inv-unit-header"></div>
+        <div class="inv-last-updated" id="inv-last-updated"></div>
       </div>
       <!-- Controls -->
       <div class="flex-between" style="margin-bottom:14px;flex-wrap:wrap;gap:10px">
@@ -4908,8 +4915,19 @@ function initInventoryIfNeeded() {
         });
       });
     });
+    if (!entry.inventoryLastUpdated) entry.inventoryLastUpdated = null;
     saveState();
+  } else if (!('inventoryLastUpdated' in entry)) {
+    entry.inventoryLastUpdated = null;
   }
+}
+
+function formatInventoryTs(ts) {
+  if (!ts) return 'Not yet updated this incident';
+  var d = new Date(ts);
+  var date = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  var time = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  return 'Last updated: ' + date + ' at ' + time;
 }
 
 function renderInventory() {
@@ -4918,6 +4936,14 @@ function renderInventory() {
   if (!bodyEl) return;
   var entry = state._incidents.find(function(i){ return i.id === state._activeId; });
   if (!entry || !entry.inventory) { bodyEl.innerHTML = ''; return; }
+
+  // Unit header + timestamp
+  var inc = state.incident;
+  var unitName = (inc && inc.unit) ? inc.unit + ' Unit' : 'Unit Inventory';
+  var headerEl = document.getElementById('inv-unit-header');
+  var tsEl = document.getElementById('inv-last-updated');
+  if (headerEl) headerEl.textContent = unitName;
+  if (tsEl) tsEl.textContent = formatInventoryTs(entry.inventoryLastUpdated);
   var items = entry.inventory;
 
   // Group by section
@@ -4964,14 +4990,16 @@ function updateInventoryQty(id, val) {
 }
 
 function saveInventoryCounts() {
-  // Read all qty inputs and commit to state
   var entry = state._incidents.find(function(i){ return i.id === state._activeId; });
   if (!entry || !entry.inventory) return;
   entry.inventory.forEach(function(item) {
     var el = document.querySelector('[data-inv-id="' + item.id + '"]');
     if (el) item.qty = el.value === '' ? '' : (parseInt(el.value) || 0);
   });
+  entry.inventoryLastUpdated = new Date().toISOString();
   saveState();
+  var tsEl = document.getElementById('inv-last-updated');
+  if (tsEl) tsEl.textContent = formatInventoryTs(entry.inventoryLastUpdated);
   var btn = document.querySelector('[onclick="saveInventoryCounts()"]');
   if (btn) { var orig = btn.innerHTML; btn.innerHTML = '&#10003; Saved'; setTimeout(function(){ btn.innerHTML = orig; }, 2000); }
 }
@@ -4982,10 +5010,12 @@ function setInventoryFlag(id, flag, clickedBtn) {
   var item = entry.inventory.find(function(x){ return x.id === id; });
   if (!item) return;
   item.flag = flag;
-  // Also save current qty from input
   var qtyEl = document.querySelector('[data-inv-id="' + id + '"]');
   if (qtyEl) item.qty = qtyEl.value === '' ? '' : (parseInt(qtyEl.value) || 0);
+  entry.inventoryLastUpdated = new Date().toISOString();
   saveState();
+  var tsEl = document.getElementById('inv-last-updated');
+  if (tsEl) tsEl.textContent = formatInventoryTs(entry.inventoryLastUpdated);
   // Update button group UI
   var row = clickedBtn.closest('.inv-flag');
   if (row) {
