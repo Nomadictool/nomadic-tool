@@ -1374,7 +1374,6 @@ body {
     <div class="modal-body" id="employee-manager-body"><!-- rendered by JS --></div>
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="closeEmployeeManager()">Close</button>
-      <button class="btn btn-primary" onclick="showNewEmployeeForm()">+ New Employee</button>
     </div>
   </div>
 </div>
@@ -1555,6 +1554,46 @@ body {
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="closeLogisticsModal()">Cancel</button>
       <button class="btn btn-primary" onclick="saveLogistics()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ ROSTER ENTRY MODAL ══════════ -->
+<div class="modal-overlay" id="roster-entry-modal" style="display:none;z-index:600">
+  <div class="modal" style="max-width:440px">
+    <div class="modal-header">
+      <div class="modal-title" id="roster-entry-title">Add Employee</div>
+      <button onclick="closeRosterEntry()" style="background:none;border:none;color:var(--gray-400);font-size:20px;cursor:pointer">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="roster-entry-id">
+      <div class="form-grid" style="margin-bottom:12px">
+        <div class="form-group"><label>Name</label><input type="text" id="roster-entry-name" placeholder="Full name"></div>
+        <div class="form-group">
+          <label>Status</label>
+          <select id="roster-entry-status">
+            <option value="available">Available</option>
+            <option value="unavailable">Unavailable</option>
+            <option value="inactive">Inactive / Left Company</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-grid" style="margin-bottom:12px">
+        <div class="form-group"><label>Location</label><input type="text" id="roster-entry-location" placeholder="City, State"></div>
+        <div class="form-group"><label>Location As Of</label><input type="date" id="roster-entry-location-date"></div>
+      </div>
+      <div class="form-group" style="margin-bottom:12px"><label>Phone</label><input type="text" id="roster-entry-phone" placeholder="555-555-5555"></div>
+      <div class="form-group">
+        <label>Notes</label>
+        <textarea id="roster-entry-notes" rows="2" style="width:100%;padding:8px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:13px;font-family:inherit;resize:vertical"></textarea>
+      </div>
+    </div>
+    <div class="modal-footer" style="justify-content:space-between">
+      <button class="btn btn-danger" id="roster-delete-btn" onclick="deleteRosterEntry()" style="display:none">Remove</button>
+      <div style="display:flex;gap:10px;margin-left:auto">
+        <button class="btn btn-outline" onclick="closeRosterEntry()">Cancel</button>
+        <button class="btn btn-primary" onclick="saveRosterEntry()">Save</button>
+      </div>
     </div>
   </div>
 </div>
@@ -2144,9 +2183,10 @@ async function loadFromSupabase() {
   const adminQueries = state.isAdmin ? [
     _sb.from('units').select('*').order('name'),
     _sb.from('app_config').select('value').eq('key', 'employee_profiles').maybeSingle(),
+    _sb.from('app_config').select('value').eq('key', 'employee_roster').maybeSingle(),
   ] : [];
   const results = await Promise.all([...baseQueries, ...adminQueries]);
-  const [incRes, cfgRes, unitsRes, profilesRes] = results;
+  const [incRes, cfgRes, unitsRes, profilesRes, rosterRes] = results;
   if (incRes.error) throw incRes.error;
   if (incRes.data && incRes.data.length > 0) {
     // Supabase (filtered by RLS to whatever this employee is allowed to see) is
@@ -2204,6 +2244,7 @@ async function loadFromSupabase() {
   }
   if (unitsRes && !unitsRes.error) _unitsCache = unitsRes.data || [];
   if (profilesRes && profilesRes.data && profilesRes.data.value) _employeeProfiles = profilesRes.data.value || {};
+  if (rosterRes && rosterRes.data && rosterRes.data.value) _rosterCache = rosterRes.data.value || [];
 }
 
 // One-time migration: if this browser has localStorage data and Supabase is empty,
@@ -4130,91 +4171,119 @@ async function renderEmployeeManager() {
   const body = document.getElementById('employee-manager-body');
   body.innerHTML = '<div style="color:var(--gray-400);font-size:13px">Loading…</div>';
 
-  // ── Active fire staff (from incident state, always shown) ──
-  const fireStaffHtml = (() => {
-    const fires = state._incidents.filter(e => e.incident);
-    if (!fires.length) return '';
-    const rows = fires.map(e => {
-      const inc = e.incident;
-      const primary = (inc.staffNames || []).filter(Boolean);
-      const additional = inc.addStaff ? (inc.additionalStaff || []).map(s => s.name).filter(Boolean) : [];
-      const all = [...primary, ...additional];
-      if (!all.length) return '';
-      const logMap = inc.employeeLogistics || {};
-      return `<div style="margin-bottom:16px">
-        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--gray-400);margin-bottom:8px">${escHtml(inc.name || 'Unnamed Fire')}</div>
-        ${all.map(n => {
-          const acc = ((logMap[n] || {}).accommodations || {});
-          const safeN = n.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-          const fid = (f) => `li-${e.id}-${n.replace(/[^a-z0-9]/gi,'_')}-${f}`;
-          const inp = (f, type, placeholder, val, extra='') =>
-            `<input type="${type}" id="${fid(f)}" value="${escHtml(val||'')}" placeholder="${placeholder}"
-              style="width:100%;padding:5px 7px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:12px;font-family:inherit;box-sizing:border-box"
-              onchange="onLogisticsFieldChange('${e.id}','${safeN}','${f}',this.value)" ${extra}>`;
-          const hasTransport = (logMap[n] || {}).transportation && (logMap[n] || {}).transportation.length > 0;
-          return `<div style="background:var(--off-white);border:1px solid var(--gray-200);border-radius:var(--radius);padding:10px 12px;margin-bottom:8px">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-              <div style="font-weight:600;font-size:13px;color:var(--navy)">${escHtml(n)}</div>
-              <button class="btn btn-outline btn-sm" onclick="openTransportModal('${safeN}','${e.id}')" title="Manage transportation">🚗 Transport${hasTransport ? ' ✓' : ''}</button>
-            </div>
-            <div style="display:grid;grid-template-columns:2fr 2fr 1fr 1fr 1fr;gap:6px;align-items:start">
-              <div><div style="font-size:10px;color:var(--gray-400);margin-bottom:2px">HOTEL / PROPERTY</div>${inp('property','text','Holiday Inn Express',acc.property)}</div>
-              <div><div style="font-size:10px;color:var(--gray-400);margin-bottom:2px">TOWN / CITY</div>${inp('town','text','Redding, CA',acc.town)}</div>
-              <div><div style="font-size:10px;color:var(--gray-400);margin-bottom:2px">CHECK-IN</div>${inp('checkIn','date','',acc.checkIn)}</div>
-              <div><div style="font-size:10px;color:var(--gray-400);margin-bottom:2px">CHECK-OUT</div>${inp('checkOut','date','',acc.checkOut)}</div>
-              <div><div style="font-size:10px;color:var(--gray-400);margin-bottom:2px">CONFIRM #</div>${inp('confirmation','text','ABC123',acc.confirmation)}</div>
-            </div>
-            <div style="margin-top:6px"><div style="font-size:10px;color:var(--gray-400);margin-bottom:2px">ADDRESS</div>${inp('address','text','Street address',acc.address)}</div>
-          </div>`;
-        }).join('')}
-      </div>`;
-    }).filter(Boolean).join('');
-    if (!rows) return '';
-    return `<div style="margin-bottom:20px">
-      <div class="section-label" style="margin-bottom:10px">Staff on Active Fires</div>
-      ${rows}
+  // ── SECTION 1: Employee Roster ──
+  const statusCfg = {
+    available:   { label: 'Available',   bg: '#d1fae5', color: '#065f46' },
+    unavailable: { label: 'Unavailable', bg: '#e5e7eb', color: '#374151' },
+    inactive:    { label: 'Inactive',    bg: '#fee2e2', color: '#991b1b' },
+    on_incident: { label: 'On Incident', bg: '#fef3c7', color: '#92400e' },
+  };
+  const rosterRows = _rosterCache.map(p => {
+    const fireName = getPersonActiveFire(p.name);
+    const statusKey = fireName ? 'on_incident' : (p.status || 'available');
+    const s = statusCfg[statusKey] || statusCfg.available;
+    const safeId = p.id.replace(/[^a-z0-9_]/gi, '_');
+    return `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--gray-100);flex-wrap:wrap">
+      <div style="min-width:140px;font-weight:600;font-size:13px;color:${statusKey==='inactive'?'var(--gray-400)':'var(--navy)'}">${escHtml(p.name)}</div>
+      <span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px;background:${s.bg};color:${s.color};white-space:nowrap">${s.label}${fireName ? ' — ' + escHtml(fireName) : ''}</span>
+      <input type="text" value="${escHtml(p.location||'')}" placeholder="Location"
+        style="flex:1;min-width:120px;padding:4px 7px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:12px;font-family:inherit"
+        onchange="updateRosterInline('${p.id}','location',this.value)">
+      <input type="date" value="${escHtml(p.locationAsOf||'')}" title="Location as of"
+        style="padding:4px 7px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:12px;font-family:inherit"
+        onchange="updateRosterInline('${p.id}','locationAsOf',this.value)">
+      <button class="btn btn-outline btn-sm" onclick="openRosterEntry('${p.id}')">Edit</button>
     </div>`;
-  })();
+  }).join('');
 
-  const { data: employees, error } = await _sb.from('employees').select('id,name,role,active').order('name');
-  if (error) { body.innerHTML = fireStaffHtml + '<div style="color:#ef4444;font-size:13px">Could not load PIN system employees.</div>'; return; }
-  _employeeManagerCache = employees || [];
-  if (!employees || employees.length === 0) {
-    body.innerHTML = fireStaffHtml + (fireStaffHtml ? '' : '<div class="empty-state"><div class="empty-icon">👥</div><p>No employees yet.</p></div>');
-    return;
-  }
-  // Fetch assignment counts in one query and tally client-side (small dataset, simplest correct approach)
-  const { data: assignments } = await _sb.from('fire_assignments').select('employee_id');
-  const countByEmployee = {};
-  (assignments || []).forEach(a => { countByEmployee[a.employee_id] = (countByEmployee[a.employee_id] || 0) + 1; });
-
-  body.innerHTML = fireStaffHtml + (fireStaffHtml ? `<div class="section-label" style="margin-bottom:10px">PIN System Employees</div>` : '') + employees.map(e => {
-    const p = _employeeProfiles[e.id] || {};
-    const locationText = p.location ? `📍 ${escHtml(p.location)}${p.locationAsOf ? ' · ' + p.locationAsOf : ''}` : '';
-    const availText = p.availability ? escHtml(p.availability) : '';
-    const profileChip = (locationText || availText)
-      ? `<div class="profile-info-chip">${[locationText, availText].filter(Boolean).join(' &nbsp;·&nbsp; ')}</div>` : '';
-    return `
-    <div style="padding:14px 0;border-bottom:1px solid var(--gray-100);display:flex;align-items:center;gap:12px;${e.active ? '' : 'opacity:0.55;'}">
-      <div style="flex:1">
-        <div style="font-weight:600;font-size:14px;color:var(--navy)">${escHtml(e.name)}
-          <span style="font-size:10px;background:${e.role === 'admin' ? '#fee2e2' : '#e5e7eb'};color:${e.role === 'admin' ? '#991b1b' : '#6b7280'};padding:1px 6px;border-radius:4px;font-weight:600;margin-left:4px">${e.role.toUpperCase()}</span>
-          ${!e.active ? '<span style="font-size:10px;background:#e5e7eb;color:#6b7280;padding:1px 6px;border-radius:4px;font-weight:500;margin-left:4px">DEACTIVATED</span>' : ''}
-        </div>
-        <div style="font-size:12px;color:var(--gray-600);margin-top:2px">${countByEmployee[e.id] || 0} fire${(countByEmployee[e.id]||0) !== 1 ? 's' : ''} assigned</div>
-        ${profileChip}
-      </div>
-      <div style="display:flex;gap:6px;flex-shrink:0;align-items:center;flex-wrap:wrap;justify-content:flex-end">
-        <button class="btn btn-outline btn-sm" onclick="openEmployeeProfile('${e.id}','${escHtml(e.name).replace(/'/g,'\\&#39;')}')">📋 Profile</button>
-        <button class="btn btn-outline btn-sm" onclick="changeEmployeePinAction('${e.id}')">Change PIN</button>
-        ${e.active
-          ? `<button class="btn btn-outline btn-sm" onclick="deactivateEmployeeAction('${e.id}')" style="color:#ef4444;border-color:#fca5a5">Deactivate</button>`
-          : `<button class="btn btn-outline btn-sm" onclick="reactivateEmployeeAction('${e.id}')" style="color:var(--forest);border-color:var(--forest)">↩ Reactivate</button>`
-        }
-        <button class="btn btn-outline btn-sm" onclick="deleteEmployeeAction('${e.id}')" style="color:#ef4444;border-color:#fca5a5">Delete</button>
-      </div>
+  const rosterHtml = `<div style="margin-bottom:24px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+      <div class="section-label">Employee Roster</div>
+      <button class="btn btn-primary btn-sm" onclick="openRosterEntry(null)">+ Add Employee</button>
     </div>
-  `}).join('');
+    ${_rosterCache.length ? rosterRows : '<div style="font-size:13px;color:var(--gray-400);font-style:italic">No employees in roster yet — click + Add Employee.</div>'}
+  </div>`;
+
+  // ── SECTION 2: Active Fire Logistics ──
+  const activeFires = state._incidents.filter(e => e.incident && !e.archived);
+  const logisticsRows = activeFires.map(e => {
+    const inc = e.incident;
+    const primary = (inc.staffNames || []).filter(Boolean);
+    const additional = inc.addStaff ? (inc.additionalStaff || []).map(s => s.name).filter(Boolean) : [];
+    const all = [...primary, ...additional];
+    if (!all.length) return '';
+    const logMap = inc.employeeLogistics || {};
+    return `<div style="margin-bottom:16px">
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--gray-400);margin-bottom:8px">${escHtml(inc.name || 'Unnamed Fire')}</div>
+      ${all.map(n => {
+        const acc = ((logMap[n] || {}).accommodations || {});
+        const safeN = n.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+        const fid = (f) => `li-${e.id}-${n.replace(/[^a-z0-9]/gi,'_')}-${f}`;
+        const inp = (f, type, placeholder, val) =>
+          `<input type="${type}" id="${fid(f)}" value="${escHtml(val||'')}" placeholder="${placeholder}"
+            style="width:100%;padding:5px 7px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:12px;font-family:inherit;box-sizing:border-box"
+            onchange="onLogisticsFieldChange('${e.id}','${safeN}','${f}',this.value)">`;
+        const hasTransport = (logMap[n] || {}).transportation && (logMap[n] || {}).transportation.length > 0;
+        return `<div style="background:var(--off-white);border:1px solid var(--gray-200);border-radius:var(--radius);padding:10px 12px;margin-bottom:8px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+            <div style="font-weight:600;font-size:13px;color:var(--navy)">${escHtml(n)}</div>
+            <button class="btn btn-outline btn-sm" onclick="openTransportModal('${safeN}','${e.id}')">🚗 Transport${hasTransport?' ✓':''}</button>
+          </div>
+          <div style="display:grid;grid-template-columns:2fr 2fr 1fr 1fr 1fr;gap:6px;align-items:start">
+            <div><div style="font-size:10px;color:var(--gray-400);margin-bottom:2px">HOTEL / PROPERTY</div>${inp('property','text','Hotel name',acc.property)}</div>
+            <div><div style="font-size:10px;color:var(--gray-400);margin-bottom:2px">TOWN / CITY</div>${inp('town','text','Redding, CA',acc.town)}</div>
+            <div><div style="font-size:10px;color:var(--gray-400);margin-bottom:2px">CHECK-IN</div>${inp('checkIn','date','',acc.checkIn)}</div>
+            <div><div style="font-size:10px;color:var(--gray-400);margin-bottom:2px">CHECK-OUT</div>${inp('checkOut','date','',acc.checkOut)}</div>
+            <div><div style="font-size:10px;color:var(--gray-400);margin-bottom:2px">CONFIRM #</div>${inp('confirmation','text','ABC123',acc.confirmation)}</div>
+          </div>
+          <div style="margin-top:6px"><div style="font-size:10px;color:var(--gray-400);margin-bottom:2px">ADDRESS</div>${inp('address','text','Street address',acc.address)}</div>
+        </div>`;
+      }).join('')}
+    </div>`;
+  }).filter(Boolean).join('');
+
+  const logisticsHtml = `<div style="margin-bottom:24px">
+    <div class="section-label" style="margin-bottom:10px">Active Fire Logistics</div>
+    ${logisticsRows || '<div style="font-size:13px;color:var(--gray-400);font-style:italic">No active fires with staff assigned.</div>'}
+  </div>`;
+
+  // ── SECTION 3: PIN System (admin only) ──
+  const { data: employees, error } = await _sb.from('employees').select('id,name,role,active').order('name');
+  _employeeManagerCache = employees || [];
+  let pinHtml = '';
+  if (!error && employees && employees.length > 0) {
+    const { data: assignments } = await _sb.from('fire_assignments').select('employee_id');
+    const countByEmployee = {};
+    (assignments || []).forEach(a => { countByEmployee[a.employee_id] = (countByEmployee[a.employee_id] || 0) + 1; });
+    pinHtml = employees.map(e => `
+      <div style="padding:12px 0;border-bottom:1px solid var(--gray-100);display:flex;align-items:center;gap:10px;flex-wrap:wrap;${e.active?'':'opacity:0.55'}">
+        <div style="flex:1;min-width:120px">
+          <div style="font-weight:600;font-size:13px;color:var(--navy)">${escHtml(e.name)}
+            <span style="font-size:10px;background:${e.role==='admin'?'#fee2e2':'#e5e7eb'};color:${e.role==='admin'?'#991b1b':'#6b7280'};padding:1px 6px;border-radius:4px;font-weight:600;margin-left:4px">${e.role.toUpperCase()}</span>
+            ${!e.active?'<span style="font-size:10px;background:#e5e7eb;color:#6b7280;padding:1px 6px;border-radius:4px;margin-left:4px">DEACTIVATED</span>':''}
+          </div>
+          <div style="font-size:11px;color:var(--gray-500);margin-top:2px">${countByEmployee[e.id]||0} fire${(countByEmployee[e.id]||0)!==1?'s':''} assigned</div>
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <button class="btn btn-outline btn-sm" onclick="changeEmployeePinAction('${e.id}')">Change PIN</button>
+          ${e.active
+            ?`<button class="btn btn-outline btn-sm" onclick="deactivateEmployeeAction('${e.id}')" style="color:#ef4444;border-color:#fca5a5">Deactivate</button>`
+            :`<button class="btn btn-outline btn-sm" onclick="reactivateEmployeeAction('${e.id}')" style="color:var(--forest);border-color:var(--forest)">↩ Reactivate</button>`}
+          <button class="btn btn-outline btn-sm" onclick="deleteEmployeeAction('${e.id}')" style="color:#ef4444;border-color:#fca5a5">Delete</button>
+        </div>
+      </div>`).join('');
+  }
+  const pinSectionHtml = `<details style="margin-bottom:10px">
+    <summary style="cursor:pointer;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--gray-400);padding:6px 0;list-style:none;display:flex;align-items:center;gap:6px">
+      <span>▶</span> PIN Login System
+    </summary>
+    <div style="margin-top:10px">
+      ${pinHtml || '<div style="font-size:13px;color:var(--gray-400);font-style:italic">No PIN employees set up yet.</div>'}
+      <div style="margin-top:10px"><button class="btn btn-outline btn-sm" onclick="showNewEmployeeForm()">+ New PIN Employee</button></div>
+    </div>
+  </details>`;
+
+  body.innerHTML = rosterHtml + logisticsHtml + pinSectionHtml;
 }
 
 async function callAdminEmployeesFn(payload) {
@@ -4272,9 +4341,28 @@ function _employeeName(id) {
 }
 
 async function deactivateEmployeeAction(id) {
-  if (!confirm(`Deactivate ${_employeeName(id)}? Their PIN will stop working immediately, including on any device they're currently logged into.`)) return;
+  const empName = _employeeName(id);
+  // Find which active fires this person is staffed on
+  const firesWithPerson = state._incidents.filter(e => {
+    if (!e.incident || e.archived) return false;
+    const all = [...(e.incident.staffNames || []), ...(e.incident.addStaff ? (e.incident.additionalStaff||[]).map(s=>s.name) : [])];
+    return all.some(n => n && n.toLowerCase() === empName.toLowerCase());
+  });
+  const fireNames = firesWithPerson.map(e => e.incident.name || 'Unknown Fire');
+  let msg = `Deactivate ${empName}? Their PIN will stop working immediately.`;
+  if (fireNames.length) msg += `\n\nThey are currently on: ${fireNames.join(', ')}.\nThey will also be removed from those fire staff lists.`;
+  if (!confirm(msg)) return;
   try {
     await callAdminEmployeesFn({ action: 'deactivate', employeeId: id });
+    // Remove from active fire staff lists
+    firesWithPerson.forEach(e => {
+      const inc = e.incident;
+      inc.staffNames = (inc.staffNames || []).filter(n => n.toLowerCase() !== empName.toLowerCase());
+      if (inc.addStaff && inc.additionalStaff) {
+        inc.additionalStaff = inc.additionalStaff.filter(s => !s.name || s.name.toLowerCase() !== empName.toLowerCase());
+      }
+    });
+    if (firesWithPerson.length) saveState();
     renderEmployeeManager();
   } catch (err) { alert(err.message); }
 }
@@ -5638,6 +5726,94 @@ async function saveEmployeeProfile() {
   if (error) { document.getElementById('profile-error').textContent = 'Save failed: ' + error.message; return; }
   closeEmployeeProfile();
   renderEmployeeManager();
+}
+
+// ══════════ EMPLOYEE ROSTER ══════════
+var _rosterCache = [];
+var _editingRosterId = null;
+
+async function loadRoster() {
+  const { data } = await _sb.from('app_config').select('value').eq('key','employee_roster').maybeSingle();
+  _rosterCache = (data && data.value) || [];
+}
+
+async function saveRoster() {
+  await _sb.from('app_config').upsert({ key: 'employee_roster', value: _rosterCache }, { onConflict: 'key' });
+}
+
+function getPersonActiveFire(name) {
+  const lc = name.toLowerCase();
+  for (const entry of state._incidents) {
+    if (!entry.incident || entry.archived) continue;
+    const primary = (entry.incident.staffNames || []);
+    const additional = entry.incident.addStaff ? (entry.incident.additionalStaff || []).map(s => s.name) : [];
+    if ([...primary, ...additional].some(n => n && n.toLowerCase() === lc)) return entry.incident.name || 'Unknown Fire';
+  }
+  return null;
+}
+
+function openRosterEntry(id) {
+  _editingRosterId = id;
+  const del = document.getElementById('roster-delete-btn');
+  if (id) {
+    const p = _rosterCache.find(x => x.id === id);
+    if (!p) return;
+    document.getElementById('roster-entry-title').textContent = 'Edit Employee';
+    document.getElementById('roster-entry-name').value = p.name || '';
+    document.getElementById('roster-entry-status').value = p.status || 'available';
+    document.getElementById('roster-entry-location').value = p.location || '';
+    document.getElementById('roster-entry-location-date').value = p.locationAsOf || '';
+    document.getElementById('roster-entry-phone').value = p.phone || '';
+    document.getElementById('roster-entry-notes').value = p.notes || '';
+    if (del) del.style.display = '';
+  } else {
+    document.getElementById('roster-entry-title').textContent = 'Add Employee';
+    ['roster-entry-name','roster-entry-location','roster-entry-location-date','roster-entry-phone','roster-entry-notes'].forEach(k => { const el = document.getElementById(k); if (el) el.value = ''; });
+    document.getElementById('roster-entry-status').value = 'available';
+    if (del) del.style.display = 'none';
+  }
+  document.getElementById('roster-entry-modal').style.display = 'flex';
+}
+
+function closeRosterEntry() { document.getElementById('roster-entry-modal').style.display = 'none'; }
+
+async function saveRosterEntry() {
+  const name = document.getElementById('roster-entry-name').value.trim();
+  if (!name) { alert('Name is required.'); return; }
+  const data = {
+    name,
+    status: document.getElementById('roster-entry-status').value,
+    location: document.getElementById('roster-entry-location').value.trim(),
+    locationAsOf: document.getElementById('roster-entry-location-date').value,
+    phone: document.getElementById('roster-entry-phone').value.trim(),
+    notes: document.getElementById('roster-entry-notes').value.trim(),
+  };
+  if (_editingRosterId) {
+    const idx = _rosterCache.findIndex(x => x.id === _editingRosterId);
+    if (idx >= 0) _rosterCache[idx] = { ..._rosterCache[idx], ...data };
+  } else {
+    _rosterCache.push({ id: 'r_' + Date.now() + '_' + Math.random().toString(36).slice(2,5), ...data });
+  }
+  await saveRoster();
+  closeRosterEntry();
+  renderEmployeeManager();
+}
+
+async function deleteRosterEntry() {
+  if (!_editingRosterId) return;
+  const p = _rosterCache.find(x => x.id === _editingRosterId);
+  if (!confirm('Remove ' + (p ? p.name : 'this employee') + ' from the roster?')) return;
+  _rosterCache = _rosterCache.filter(x => x.id !== _editingRosterId);
+  await saveRoster();
+  closeRosterEntry();
+  renderEmployeeManager();
+}
+
+function updateRosterInline(id, field, value) {
+  const idx = _rosterCache.findIndex(x => x.id === id);
+  if (idx < 0) return;
+  _rosterCache[idx][field] = value;
+  saveRoster();
 }
 
 // ══════════ INCIDENT LOGISTICS ══════════
