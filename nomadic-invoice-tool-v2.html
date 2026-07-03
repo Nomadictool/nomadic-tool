@@ -6141,15 +6141,18 @@ var _reportStats = null;
 
 function openSeasonReport() {
   if (!state.isAdmin) return;
-  const allYears = new Set([new Date().getFullYear().toString()]);
+  const allYears = new Set();
   state._incidents.forEach(e => {
     (e.orders || []).forEach(o => { if (o.date) allYears.add(o.date.substring(0,4)); });
   });
   const curYear = new Date().getFullYear().toString();
+  const defaultYear = allYears.has(curYear) ? curYear : ([...allYears].sort((a,b)=>b-a)[0] || curYear);
   const sel = document.getElementById('report-year');
-  sel.innerHTML = [...allYears].sort((a,b) => b-a).map(y =>
-    `<option value="${y}"${y===curYear?' selected':''}>${y}</option>`
-  ).join('');
+  sel.innerHTML = `<option value="all">All Years</option>` +
+    [...allYears].sort((a,b) => b-a).map(y =>
+      `<option value="${y}"${y===defaultYear?' selected':''}>${y}</option>`
+    ).join('');
+  sel.value = defaultYear;
   document.getElementById('season-report-modal').style.display = 'flex';
   renderSeasonReport(sel.value);
 }
@@ -6161,32 +6164,35 @@ function closeSeasonReport() {
 function computeSeasonStats(year) {
   year = String(year);
   _reportYear = year;
+  const filterByYear = year !== 'all';
   const incStats = [];
   const monthRevenue = new Array(12).fill(0);
   const monthDays = new Array(12).fill(0);
   state._incidents.forEach(e => {
     if (!e.incident) return;
-    const orders = (e.orders || []).filter(o => o.date && o.date.startsWith(year));
+    const orders = (e.orders || []).filter(o => o.date && (!filterByYear || o.date.startsWith(year)));
     if (!orders.length) return;
     const agency = e.incident.agency || 'federal';
-    const uniqueDates = [...new Set(orders.map(o => o.date))];
+    const dayRate = e.incident.dayRate || 0;
+    const addStaffRate = e.incident.addStaff
+      ? (e.incident.additionalStaff || []).reduce((s, x) => s + (x.rate || 0), 0)
+      : 0;
+    const perDayRate = dayRate + addStaffRate;
     let incRevenue = 0;
-    const datesByMonth = {};
     orders.forEach(o => {
-      const rev = calcOrderTotal(o, agency);
-      incRevenue += rev;
+      const orderRev = calcOrderTotal(o, agency);
+      const dayRev = perDayRate + orderRev;
+      incRevenue += dayRev;
       const m = parseInt(o.date.substring(5,7)) - 1;
-      monthRevenue[m] += rev;
-      if (!datesByMonth[m]) datesByMonth[m] = new Set();
-      datesByMonth[m].add(o.date);
+      monthRevenue[m] += dayRev;
+      monthDays[m] += 1;
     });
-    Object.entries(datesByMonth).forEach(([m, ds]) => { monthDays[parseInt(m)] += ds.size; });
     incStats.push({
       name: e.incident.name || 'Unnamed Fire',
       eNumber: e.incident.eNumber || '',
       agency,
       unit: e.incident.unit || '—',
-      days: uniqueDates.length,
+      days: orders.length,
       revenue: incRevenue,
     });
   });
@@ -6255,18 +6261,6 @@ function renderSeasonReport(year) {
     </tbody>
   </table>
 
-  <div class="section-label" style="margin-bottom:10px">Revenue by Incident</div>
-  <table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:28px">
-    <thead><tr style="background:var(--off-white)">${th('Fire')}${th('Agency')}${th('Unit')}${thr('Days')}${thr('Revenue')}</tr></thead>
-    <tbody>
-      ${[...s.incStats].sort((a,b)=>b.revenue-a.revenue).map(i=>`<tr>
-        ${td(escHtml(i.name)+(i.eNumber?`<span style="font-size:11px;color:var(--gray-400);margin-left:6px">${escHtml(i.eNumber)}</span>`:''),true)}
-        ${td(agLbl(i.agency),false)}${td(escHtml(i.unit),false)}
-        ${tdr(i.days,false)}${tdr(fmt$(i.revenue),true)}
-      </tr>`).join('')}
-    </tbody>
-  </table>
-
   ${Object.keys(s.unitMap).length>1 ? `
   <div class="section-label" style="margin-bottom:10px">Revenue by Unit</div>
   <table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:16px">
@@ -6318,17 +6312,6 @@ function printSeasonReport() {
     <tbody>
       ${MONTHS.map((m,i) => s.monthRevenue[i]>0 ? `<tr><td><b>${m}</b></td><td class="r gray">${s.monthDays[i]}</td><td class="r mono">${fmt$(s.monthRevenue[i])}</td></tr>` : '').join('')}
       <tr class="total"><td>Total</td><td class="r">${s.totalDays}</td><td class="r mono">${fmt$(s.totalRevenue)}</td></tr>
-    </tbody>
-  </table>
-  <div class="sec">Revenue by Incident</div>
-  <table>
-    <thead><tr><th>Fire</th><th>Agency</th><th>Unit</th><th class="r">Days</th><th class="r">Revenue</th></tr></thead>
-    <tbody>
-      ${[...s.incStats].sort((a,b)=>b.revenue-a.revenue).map(i=>`<tr>
-        <td><b>${escHtml(i.name)}</b>${i.eNumber?` <span class="gray">${escHtml(i.eNumber)}</span>`:''}</td>
-        <td class="gray">${agLbl(i.agency)}</td><td class="gray">${escHtml(i.unit)}</td>
-        <td class="r gray">${i.days}</td><td class="r mono">${fmt$(i.revenue)}</td>
-      </tr>`).join('')}
     </tbody>
   </table>
   ${Object.keys(s.unitMap).length>1 ? `
