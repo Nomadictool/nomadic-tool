@@ -977,19 +977,6 @@ body {
         <!-- rendered by JS -->
       </div>
       <div class="card" style="margin-top:20px;padding:20px;max-width:520px">
-        <h3 style="font-size:14px;font-weight:700;margin-bottom:4px">Claude AI Chatbot</h3>
-        <p style="font-size:12px;color:var(--gray-500);margin-bottom:14px">Enter your Anthropic API key to enable the AI assistant in the Help tab. The key is stored locally in this browser only.</p>
-        <div class="form-group" style="margin-bottom:12px">
-          <label>API Key</label>
-          <input type="password" id="api-key-input" placeholder="sk-ant-..." style="font-family:'IBM Plex Mono',monospace;font-size:12px" oninput="previewApiKey(this.value)">
-        </div>
-        <div style="display:flex;gap:8px;align-items:center">
-          <button class="btn btn-primary" style="font-size:13px" onclick="saveApiKey()">Save API Key</button>
-          <button class="btn btn-outline" style="font-size:13px" onclick="clearApiKey()">Clear</button>
-          <span id="api-key-status" style="font-size:12px;color:var(--gray-500)"></span>
-        </div>
-      </div>
-      <div class="card" style="margin-top:20px;padding:20px;max-width:520px">
         <h3 style="font-size:14px;font-weight:700;margin-bottom:4px">Expense Settings</h3>
         <p style="font-size:12px;color:var(--gray-500);margin-bottom:14px">Used by the Expenses screen for mileage reimbursement and sending approved reports to your HR/payroll contact.</p>
         <div class="form-group" style="margin-bottom:12px">
@@ -1281,9 +1268,6 @@ body {
           </div>
           <div id="chat-window" class="chat-window" style="flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:10px">
             <div class="chat-msg assistant">Hi! I&rsquo;m Claude, an AI assistant. I can help answer questions about fire camp copy unit operations, invoicing, equipment, or how to use this tool. What can I help you with?</div>
-          </div>
-          <div id="chat-api-warning" style="display:none;padding:10px 16px;background:#fff8e1;border-top:1px solid #ffe082;font-size:11px;color:#7c5c00">
-            No API key configured. Ask your admin to add one in the Rates tab to enable AI chat.
           </div>
           <div style="padding:12px 16px;border-top:1px solid var(--gray-100);display:flex;gap:8px;align-items:flex-end">
             <textarea id="chat-input" rows="2" placeholder="Type a question..." style="flex:1;padding:8px 12px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:13px;font-family:inherit;resize:none" onkeydown="handleChatKey(event)"></textarea>
@@ -3673,13 +3657,6 @@ function lockAdmin() {
 function renderRatesAdmin() {
   if (!state.adminUnlocked) { showAdminLogin(); return; }
   const grid = document.getElementById('rates-admin-grid');
-  // Populate API key field
-  const existingKey = localStorage.getItem('nomadic_api_key') || '';
-  const keyInput = document.getElementById('api-key-input');
-  if (keyInput) keyInput.value = existingKey ? existingKey.slice(0,12) + '…' : '';
-  const keyStatus = document.getElementById('api-key-status');
-  if (keyStatus) keyStatus.textContent = existingKey ? 'Key saved (' + existingKey.length + ' chars)' : 'No key saved';
-
   const standardItems = [
     ['bw85','8.5×11 B&W (ea)'],['color85','8.5×11 Color (ea)'],['lam85','8.5×11 Laminate (ea)'],
     ['cpbw','8.5×11 Color Paper B&W (ea)'],['cpc','8.5×11 Color Paper Color (ea)'],
@@ -4602,26 +4579,6 @@ function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-// ══════════ API KEY ══════════
-function saveApiKey() {
-  const raw = document.getElementById('api-key-input').value.trim();
-  // If it contains ellipsis (shown as masked), don't overwrite
-  if (raw.includes('…')) { alert('No change — key already saved. Clear first to replace it.'); return; }
-  if (!raw) { alert('Please enter an API key.'); return; }
-  localStorage.setItem('nomadic_api_key', raw);
-  document.getElementById('api-key-input').value = raw.slice(0,12) + '…';
-  document.getElementById('api-key-status').textContent = 'Key saved (' + raw.length + ' chars)';
-  alert('API key saved.');
-}
-function clearApiKey() {
-  if (!confirm('Remove the stored API key?')) return;
-  localStorage.removeItem('nomadic_api_key');
-  document.getElementById('api-key-input').value = '';
-  document.getElementById('api-key-status').textContent = 'No key saved';
-}
-function previewApiKey(v) {
-  // Don't interfere while user is typing a real key
-}
 
 // ══════════ SHIFT LOG ══════════
 function renderShiftLog() {
@@ -4793,11 +4750,7 @@ function printChecklist(shift) {
 }
 
 // ══════════ HELP ══════════
-function renderHelp() {
-  var apiKey = localStorage.getItem('nomadic_api_key') || '';
-  var warn = document.getElementById('chat-api-warning');
-  if (warn) warn.style.display = apiKey ? 'none' : '';
-}
+function renderHelp() {}
 
 function printHelpGuide() {
   var sections = document.querySelectorAll('#help-guide-sections .help-section');
@@ -4846,21 +4799,17 @@ async function sendChatMessage() {
   var inputEl = document.getElementById('chat-input');
   var msg = inputEl.value.trim();
   if (!msg) return;
-  var apiKey = localStorage.getItem('nomadic_api_key') || '';
-  if (!apiKey) { alert('No API key configured. Ask your admin to add one in the Rates tab.'); return; }
   inputEl.value = '';
   var btn = document.getElementById('chat-send-btn');
   btn.disabled = true; btn.textContent = '…';
   appendChatMsg('user', msg);
   chatHistory.push({ role: 'user', content: msg });
   try {
-    // Route through the Netlify serverless function to avoid CORS issues
     var resp = await fetch('/.netlify/functions/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        apiKey: apiKey,
-        model: 'claude-opus-4-5',
+        model: 'claude-haiku-4-5-20251001',
         max_tokens: 1024,
         system: 'You are a helpful assistant for Nomadic Clerical Support, a fire camp copy unit company. Help staff with questions about copy unit operations, invoicing procedures, equipment, and how to use the Nomadic Invoice Tool. Be concise, friendly, and practical. Do not offer to modify any software or settings — direct technical changes to admin.',
         messages: chatHistory,
@@ -4869,9 +4818,7 @@ async function sendChatMessage() {
     if (!resp.ok) {
       var errData = await resp.json().catch(function(){ return {}; });
       var errMsg = (errData.error && errData.error.message) ? errData.error.message : 'HTTP ' + resp.status;
-      if (resp.status === 401) errMsg = 'Invalid API key — go to Admin and re-enter your key.';
       if (resp.status === 429) errMsg = 'Rate limit reached — wait a moment and try again.';
-      if (resp.status === 400) errMsg = 'Bad request: ' + errMsg;
       appendChatMsg('assistant', '⚠️ ' + errMsg);
     } else {
       var data = await resp.json();
@@ -4880,7 +4827,7 @@ async function sendChatMessage() {
       appendChatMsg('assistant', reply);
     }
   } catch(err) {
-    appendChatMsg('assistant', '⚠️ Network error — could not reach the server. Check your internet connection and try again.');
+    appendChatMsg('assistant', '⚠️ Network error — check your internet connection and try again.');
   } finally {
     btn.disabled = false; btn.textContent = 'Send';
   }

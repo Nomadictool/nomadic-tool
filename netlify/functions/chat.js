@@ -6,17 +6,14 @@ exports.handler = async function(event) {
     'Content-Type': 'application/json'
   };
 
-  if (event.httpMethod === 'OPTIONS') {
-    return { statusCode: 200, headers, body: '' };
-  }
+  if (event.httpMethod === 'OPTIONS') return { statusCode: 200, headers, body: '' };
+  if (event.httpMethod !== 'POST') return { statusCode: 405, headers, body: JSON.stringify({ error: 'Method not allowed' }) };
 
-  if (event.httpMethod !== 'POST') {
-    return { statusCode: 405, headers, body: JSON.stringify({ error: 'Method not allowed' }) };
-  }
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) return { statusCode: 500, headers, body: JSON.stringify({ error: { message: 'Chat not configured on the server. Contact your admin.' } }) };
 
   try {
-    const { apiKey, model, max_tokens, system, messages } = JSON.parse(event.body);
-    if (!apiKey) return { statusCode: 400, headers, body: JSON.stringify({ error: { message: 'No API key provided.' } }) };
+    const { model, max_tokens, system, messages } = JSON.parse(event.body);
 
     const resp = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
