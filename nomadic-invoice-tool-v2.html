@@ -640,6 +640,23 @@ body {
 .inv-delete:hover{color:var(--red,#dc2626)}
 .inv-unit-header{font-family:'Barlow Condensed',sans-serif;font-size:20px;font-weight:700;color:var(--forest);letter-spacing:.3px}
 .inv-last-updated{font-size:11px;color:var(--gray-400);margin-top:3px;margin-bottom:14px;font-style:italic}
+/* ── FLEET ── */
+.fleet-stat-card{background:white;border:1px solid var(--gray-200);border-radius:var(--radius);padding:14px 18px;text-align:center;box-shadow:var(--shadow-sm)}
+.fleet-stat-num{font-family:'Barlow Condensed',sans-serif;font-size:36px;font-weight:700;line-height:1}
+.fleet-stat-label{font-size:11px;color:var(--gray-400);text-transform:uppercase;letter-spacing:.06em;margin-top:4px}
+.unit-row{background:white;border:1px solid var(--gray-200);border-radius:var(--radius);padding:14px 18px;display:flex;align-items:center;gap:14px;margin-bottom:8px;flex-wrap:wrap}
+.unit-row:hover{border-color:var(--pine)}
+.unit-name-tag{font-family:'Barlow Condensed',sans-serif;font-size:22px;font-weight:700;color:var(--forest);min-width:72px}
+.unit-status-badge{font-size:11px;font-weight:700;padding:3px 10px;border-radius:10px;white-space:nowrap;letter-spacing:.02em}
+.us-available{background:#d1fae5;color:#065f46}
+.us-incident{background:#fef3c7;color:#92400e}
+.us-maintenance{background:#fee2e2;color:#991b1b}
+.us-storage{background:#e5e7eb;color:#374151}
+.us-retired{background:#f3f4f6;color:#9ca3af}
+/* ── LOGISTICS ── */
+.logistics-entry{background:var(--off-white);border:1px solid var(--gray-200);border-radius:var(--radius);padding:14px;margin-bottom:10px}
+/* ── EMPLOYEE PROFILE ── */
+.profile-info-chip{font-size:11px;color:var(--gray-500);margin-top:3px}
 .inv-custom-label{font-size:11px;background:var(--gray-100);color:var(--gray-500);padding:1px 5px;border-radius:4px;margin-left:6px}
 @keyframes spin{to{transform:rotate(360deg)}}
 </style>
@@ -826,6 +843,7 @@ body {
     <button class="btn btn-outline btn-sm" onclick="openFireSelector()" id="switch-fire-btn" style="display:none; color:var(--amber); border-color:var(--amber)">⇄ Switch Fire</button>
     <button class="btn btn-outline btn-sm" onclick="openIncidentManager()" id="manage-incidents-btn" style="display:none; color:var(--gray-200); border-color:var(--navy-mid)">⚙ Incidents</button>
     <button class="btn btn-outline btn-sm" onclick="openEmployeeManager()" id="manage-employees-btn" style="display:none; color:var(--gray-200); border-color:var(--navy-mid)">👥 Employees</button>
+    <button class="btn btn-outline btn-sm" onclick="openLogisticsModal()" id="logistics-btn" style="display:none; color:var(--gray-200); border-color:var(--navy-mid)">📍 Logistics</button>
     <span id="sync-pulse" style="font-size:11px;color:#6aaa6e;opacity:0;transition:opacity 0.6s;letter-spacing:1px">⟳ SYNCED</span>
     <span id="last-saved-display" style="font-size:11px;color:var(--gray-400);letter-spacing:0.5px"></span>
     <span id="local-backup-display" style="font-size:11px;color:var(--gray-400);letter-spacing:0.5px"></span>
@@ -848,6 +866,7 @@ body {
   <button class="nav-btn" onclick="showScreen('admin')" id="nav-rates" style="display:none">⚙ Rates</button>
   <button class="nav-btn" onclick="showScreen('season')" id="nav-season" style="display:none">📊 Season</button>
   <button class="nav-btn" onclick="showScreen('summary')" id="nav-summary" style="display:none">📋 Summary</button>
+  <button class="nav-btn" onclick="showScreen('fleet')" id="nav-fleet" style="display:none">🚛 Fleet</button>
   <button class="nav-btn" onclick="lockAdmin()" id="nav-lock" style="display:none">🔒 Lock</button>
 </nav>
 
@@ -1300,6 +1319,17 @@ body {
     <div id="expense-review-list"><!-- rendered by JS --></div>
   </div>
 
+
+  <!-- ══ FLEET SCREEN ══ -->
+  <div class="screen" id="screen-fleet">
+    <div class="flex-between" style="margin-bottom:20px">
+      <h1 style="font-family:'Barlow Condensed',sans-serif;font-size:26px;font-weight:700">Fleet</h1>
+      <button class="btn btn-primary" onclick="openUnitEdit(null)">+ Add Unit</button>
+    </div>
+    <div id="fleet-stats" style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px"></div>
+    <div id="fleet-units"></div>
+  </div>
+
 </main>
 <!-- FIRE SELECTOR MODAL -->
 <div class="modal-overlay" id="fire-selector-modal" style="display:none">
@@ -1349,6 +1379,172 @@ body {
     </div>
   </div>
 </div>
+<!-- ══════════ UNIT EDIT MODAL ══════════ -->
+<div class="modal-overlay" id="unit-edit-modal" style="display:none">
+  <div class="modal" style="max-width:680px">
+    <div class="modal-header">
+      <div class="modal-title" id="unit-edit-title">Add Unit</div>
+      <button onclick="closeUnitEdit()" style="background:none;border:none;color:var(--gray-400);font-size:20px;cursor:pointer">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="unit-edit-id">
+      <div class="form-grid" style="margin-bottom:14px">
+        <div class="form-group">
+          <label>Unit Name</label>
+          <input type="text" id="unit-edit-name" list="unit-names-datalist" placeholder="e.g. Alpha">
+          <datalist id="unit-names-datalist">
+            <option value="Romeo"><option value="Echo"><option value="Golf"><option value="Mike">
+            <option value="Jaybird"><option value="Alpha"><option value="Charlie">
+            <option value="Progressive"><option value="Zeus">
+          </datalist>
+        </div>
+        <div class="form-group">
+          <label>Type</label>
+          <select id="unit-edit-type">
+            <option value="">— Select —</option>
+            <option>Trailer</option><option>Van</option><option>Truck</option>
+            <option>SUV</option><option>Box Truck</option><option>Other</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-grid" style="margin-bottom:14px">
+        <div class="form-group"><label>Year</label><input type="text" id="unit-edit-year" placeholder="e.g. 2019" maxlength="4"></div>
+        <div class="form-group"><label>Make</label><input type="text" id="unit-edit-make" placeholder="e.g. Ford"></div>
+        <div class="form-group"><label>Model</label><input type="text" id="unit-edit-model" placeholder="e.g. Transit"></div>
+      </div>
+      <div class="form-grid" style="margin-bottom:14px">
+        <div class="form-group"><label>VIN</label><input type="text" id="unit-edit-vin" placeholder="17-char VIN" style="font-family:'IBM Plex Mono',monospace;font-size:12px;text-transform:uppercase"></div>
+        <div class="form-group"><label>License Plate</label><input type="text" id="unit-edit-plate" placeholder="e.g. ABC1234" style="text-transform:uppercase"></div>
+        <div class="form-group"><label>Reg. State</label><input type="text" id="unit-edit-state" placeholder="CA" maxlength="2" style="text-transform:uppercase"></div>
+      </div>
+      <div class="form-grid" style="margin-bottom:14px">
+        <div class="form-group" style="display:flex;align-items:center;gap:10px;padding-top:22px">
+          <label class="toggle"><input type="checkbox" id="unit-edit-title-check"><span class="toggle-slider"></span></label>
+          <span style="font-size:13px;font-weight:500">Have Title</span>
+        </div>
+        <div class="form-group"><label>Length (ft)</label><input type="number" id="unit-edit-length" step="0.1" placeholder="e.g. 40.0"></div>
+        <div class="form-group"><label>Width (ft)</label><input type="number" id="unit-edit-width" step="0.1" placeholder="e.g. 8.5"></div>
+      </div>
+      <div class="form-grid" style="margin-bottom:14px">
+        <div class="form-group"><label>Day Rate ($)</label><input type="number" id="unit-edit-dayrate" step="0.01" placeholder="e.g. 1200.00"></div>
+        <div class="form-group">
+          <label>When Not on Incident</label>
+          <select id="unit-edit-status">
+            <option value="available">Available</option>
+            <option value="maintenance">In Maintenance</option>
+            <option value="storage">In Storage</option>
+            <option value="retired">Retired</option>
+          </select>
+        </div>
+        <div class="form-group"><label>Storage Location</label><input type="text" id="unit-edit-storage" placeholder="e.g. Signal Hill yard"></div>
+      </div>
+      <div class="form-group">
+        <label>Notes</label>
+        <textarea id="unit-edit-notes" rows="2" style="width:100%;padding:8px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:13px;font-family:inherit;resize:vertical"></textarea>
+      </div>
+      <div id="unit-edit-error" style="color:var(--red);font-size:12px;margin-top:8px"></div>
+    </div>
+    <div class="modal-footer" style="justify-content:space-between">
+      <button class="btn btn-danger" id="unit-delete-btn" onclick="deleteUnit()" style="display:none">Delete Unit</button>
+      <div style="display:flex;gap:10px;margin-left:auto">
+        <button class="btn btn-outline" onclick="closeUnitEdit()">Cancel</button>
+        <button class="btn btn-primary" onclick="saveUnit()">Save Unit</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ EMPLOYEE PROFILE MODAL ══════════ -->
+<div class="modal-overlay" id="employee-profile-modal" style="display:none;z-index:650">
+  <div class="modal" style="max-width:500px">
+    <div class="modal-header">
+      <div class="modal-title" id="employee-profile-title">Employee Profile</div>
+      <button onclick="closeEmployeeProfile()" style="background:none;border:none;color:var(--gray-400);font-size:20px;cursor:pointer">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="profile-employee-id">
+      <div class="form-grid" style="margin-bottom:14px">
+        <div class="form-group">
+          <label>Status</label>
+          <select id="profile-status">
+            <option value="available">Available</option>
+            <option value="on_incident">On Incident</option>
+            <option value="on_leave">On Leave</option>
+            <option value="unavailable">Unavailable</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Shirt Size</label>
+          <select id="profile-shirt">
+            <option value="">—</option>
+            <option>XS</option><option>S</option><option>M</option><option>L</option>
+            <option>XL</option><option>2XL</option><option>3XL</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-grid" style="margin-bottom:14px">
+        <div class="form-group"><label>Current Location</label><input type="text" id="profile-location" placeholder="e.g. Redding, CA"></div>
+        <div class="form-group"><label>As Of</label><input type="date" id="profile-location-date"></div>
+      </div>
+      <div class="form-group" style="margin-bottom:14px">
+        <label>Email</label>
+        <input type="email" id="profile-email" placeholder="e.g. name@email.com">
+      </div>
+      <div class="form-group" style="margin-bottom:14px">
+        <label>Availability</label>
+        <input type="text" id="profile-availability" placeholder="e.g. Full-time, on-call">
+      </div>
+      <div class="form-group">
+        <label>Notes</label>
+        <textarea id="profile-notes" rows="3" style="width:100%;padding:8px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:13px;font-family:inherit;resize:vertical"></textarea>
+      </div>
+      <div id="profile-error" style="color:var(--red);font-size:12px;margin-top:8px"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeEmployeeProfile()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveEmployeeProfile()">Save Profile</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ INCIDENT LOGISTICS MODAL ══════════ -->
+<div class="modal-overlay" id="incident-logistics-modal" style="display:none">
+  <div class="modal" style="max-width:680px">
+    <div class="modal-header">
+      <div class="modal-title" id="logistics-modal-title">📍 Logistics</div>
+      <button onclick="closeLogisticsModal()" style="background:none;border:none;color:var(--gray-400);font-size:20px;cursor:pointer">✕</button>
+    </div>
+    <div class="modal-body">
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--gray-400);margin-bottom:12px">Accommodations</div>
+      <div class="form-grid" style="margin-bottom:12px">
+        <div class="form-group"><label>Property Name</label><input type="text" id="log-property" placeholder="e.g. Holiday Inn Express"></div>
+        <div class="form-group"><label>Town / City</label><input type="text" id="log-town" placeholder="e.g. Redding, CA"></div>
+      </div>
+      <div class="form-group" style="margin-bottom:12px">
+        <label>Address</label><input type="text" id="log-address" placeholder="Street address">
+      </div>
+      <div class="form-grid" style="margin-bottom:12px">
+        <div class="form-group"><label>Check-In</label><input type="date" id="log-checkin"></div>
+        <div class="form-group"><label>Check-Out</label><input type="date" id="log-checkout"></div>
+        <div class="form-group"><label>Confirmation #</label><input type="text" id="log-hotel-confirm" placeholder="ABC123"></div>
+      </div>
+      <div class="form-group" style="margin-bottom:24px">
+        <label>Notes</label>
+        <textarea id="log-hotel-notes" rows="2" style="width:100%;padding:8px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:13px;font-family:inherit;resize:vertical"></textarea>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--gray-400)">Transportation</div>
+        <button class="btn btn-outline btn-sm" onclick="addTransportEntry()">+ Add</button>
+      </div>
+      <div id="transport-entries-list"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeLogisticsModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveLogistics()">Save</button>
+    </div>
+  </div>
+</div>
+
 <!-- ══════════ NEW EMPLOYEE MODAL ══════════ -->
 <div class="modal-overlay" id="new-employee-modal" style="display:none;z-index:600">
   <div class="modal" style="max-width:400px">
@@ -1927,10 +2123,16 @@ async function persistToSupabase() {
 
 // Fetch all incidents and rates from Supabase into memory
 async function loadFromSupabase() {
-  const [incRes, cfgRes] = await Promise.all([
+  const baseQueries = [
     _sb.from('incidents').select('*').order('updated_at', { ascending: true }),
-    _sb.from('app_config').select('*').eq('key', 'rates').maybeSingle()
-  ]);
+    _sb.from('app_config').select('*').eq('key', 'rates').maybeSingle(),
+  ];
+  const adminQueries = state.isAdmin ? [
+    _sb.from('units').select('*').order('name'),
+    _sb.from('app_config').select('value').eq('key', 'employee_profiles').maybeSingle(),
+  ] : [];
+  const results = await Promise.all([...baseQueries, ...adminQueries]);
+  const [incRes, cfgRes, unitsRes, profilesRes] = results;
   if (incRes.error) throw incRes.error;
   if (incRes.data && incRes.data.length > 0) {
     // Supabase (filtered by RLS to whatever this employee is allowed to see) is
@@ -1986,6 +2188,8 @@ async function loadFromSupabase() {
   if (cfgRes.data && cfgRes.data.value) {
     state.rates = cfgRes.data.value;
   }
+  if (unitsRes && !unitsRes.error) _unitsCache = unitsRes.data || [];
+  if (profilesRes && profilesRes.data && profilesRes.data.value) _employeeProfiles = profilesRes.data.value || {};
 }
 
 // One-time migration: if this browser has localStorage data and Supabase is empty,
@@ -2712,6 +2916,7 @@ function showScreen(name) {
   if (name === 'help')     renderHelp();
   if (name === 'expenses') loadMyExpenseReports();
   if (name === 'expense-review') loadExpenseReviewList();
+  if (name === 'fleet') renderFleetScreen();
 }
 
 // ══════════ ORDER FORM ══════════
@@ -3629,8 +3834,10 @@ function showAdminLogin() {
     if (el('nav-rates'))            el('nav-rates').style.display = '';
     if (el('nav-season'))           el('nav-season').style.display = '';
     if (el('nav-summary'))          el('nav-summary').style.display = '';
+    if (el('nav-fleet'))            el('nav-fleet').style.display = '';
     if (el('nav-lock'))             el('nav-lock').style.display = '';
     if (el('manage-incidents-btn')) el('manage-incidents-btn').style.display = '';
+    if (el('logistics-btn'))        el('logistics-btn').style.display = '';
     if (el('day-total-box'))        el('day-total-box').style.display = '';
     renderRatesAdmin();
     updateDayTotalBox(document.getElementById('daily-date').value);
@@ -3647,10 +3854,12 @@ function lockAdmin() {
   if (el('nav-rates'))            el('nav-rates').style.display = 'none';
   if (el('nav-season'))           el('nav-season').style.display = 'none';
   if (el('nav-summary'))          el('nav-summary').style.display = 'none';
+  if (el('nav-fleet'))            el('nav-fleet').style.display = 'none';
   if (el('nav-lock'))             el('nav-lock').style.display = 'none';
   if (el('manage-incidents-btn')) el('manage-incidents-btn').style.display = 'none';
+  if (el('logistics-btn'))        el('logistics-btn').style.display = 'none';
   if (el('day-total-box'))        el('day-total-box').style.display = 'none';
-  const adminScreens = ['admin','season','summary'];
+  const adminScreens = ['admin','season','summary','fleet'];
   if (adminScreens.some(s => el('screen-'+s)?.classList.contains('active'))) showScreen('daily-log');
 }
 
@@ -3919,7 +4128,13 @@ async function renderEmployeeManager() {
   const countByEmployee = {};
   (assignments || []).forEach(a => { countByEmployee[a.employee_id] = (countByEmployee[a.employee_id] || 0) + 1; });
 
-  body.innerHTML = employees.map(e => `
+  body.innerHTML = employees.map(e => {
+    const p = _employeeProfiles[e.id] || {};
+    const locationText = p.location ? `📍 ${escHtml(p.location)}${p.locationAsOf ? ' · ' + p.locationAsOf : ''}` : '';
+    const availText = p.availability ? escHtml(p.availability) : '';
+    const profileChip = (locationText || availText)
+      ? `<div class="profile-info-chip">${[locationText, availText].filter(Boolean).join(' &nbsp;·&nbsp; ')}</div>` : '';
+    return `
     <div style="padding:14px 0;border-bottom:1px solid var(--gray-100);display:flex;align-items:center;gap:12px;${e.active ? '' : 'opacity:0.55;'}">
       <div style="flex:1">
         <div style="font-weight:600;font-size:14px;color:var(--navy)">${escHtml(e.name)}
@@ -3927,8 +4142,10 @@ async function renderEmployeeManager() {
           ${!e.active ? '<span style="font-size:10px;background:#e5e7eb;color:#6b7280;padding:1px 6px;border-radius:4px;font-weight:500;margin-left:4px">DEACTIVATED</span>' : ''}
         </div>
         <div style="font-size:12px;color:var(--gray-600);margin-top:2px">${countByEmployee[e.id] || 0} fire${(countByEmployee[e.id]||0) !== 1 ? 's' : ''} assigned</div>
+        ${profileChip}
       </div>
       <div style="display:flex;gap:6px;flex-shrink:0;align-items:center;flex-wrap:wrap;justify-content:flex-end">
+        <button class="btn btn-outline btn-sm" onclick="openEmployeeProfile('${e.id}','${escHtml(e.name).replace(/'/g,'\\&#39;')}')">📋 Profile</button>
         <button class="btn btn-outline btn-sm" onclick="changeEmployeePinAction('${e.id}')">Change PIN</button>
         ${e.active
           ? `<button class="btn btn-outline btn-sm" onclick="deactivateEmployeeAction('${e.id}')" style="color:#ef4444;border-color:#fca5a5">Deactivate</button>`
@@ -3937,7 +4154,7 @@ async function renderEmployeeManager() {
         <button class="btn btn-outline btn-sm" onclick="deleteEmployeeAction('${e.id}')" style="color:#ef4444;border-color:#fca5a5">Delete</button>
       </div>
     </div>
-  `).join('');
+  `}).join('');
 }
 
 async function callAdminEmployeesFn(payload) {
@@ -5077,6 +5294,304 @@ function addCustomInventoryItem() {
   });
   saveState();
   renderInventory();
+}
+
+// ══════════ FLEET ══════════
+var _unitsCache = [];
+var _employeeProfiles = {};
+var _editingUnitId = null;
+
+async function reloadUnits() {
+  const { data, error } = await _sb.from('units').select('*').order('name');
+  if (!error) _unitsCache = data || [];
+}
+
+function getUnitEffectiveStatus(unit) {
+  const activeEntry = state._incidents.find(e => e.incident && e.incident.unit === unit.name);
+  if (activeEntry) return { key: 'incident', label: 'On Incident — ' + (activeEntry.incident.name || unit.name), cls: 'us-incident' };
+  const map = {
+    available:   { key: 'available',    label: 'Available',       cls: 'us-available' },
+    maintenance: { key: 'maintenance',  label: 'In Maintenance',  cls: 'us-maintenance' },
+    storage:     { key: 'storage',      label: 'In Storage',      cls: 'us-storage' },
+    retired:     { key: 'retired',      label: 'Retired',         cls: 'us-retired' },
+  };
+  return map[unit.manual_status] || map.available;
+}
+
+async function renderFleetScreen() {
+  if (!state.adminUnlocked) { showAdminLogin(); return; }
+  if (_unitsCache.length === 0) await reloadUnits();
+  const statsEl = document.getElementById('fleet-stats');
+  const unitsEl = document.getElementById('fleet-units');
+  if (!statsEl || !unitsEl) return;
+
+  const units = _unitsCache.map(u => ({ ...u, effectiveStatus: getUnitEffectiveStatus(u) }));
+
+  // Ghost rows for incident units not yet in the registry
+  const trackedNames = new Set(units.map(u => u.name));
+  const ghosts = [];
+  state._incidents.forEach(e => {
+    const n = e.incident && e.incident.unit;
+    if (n && !trackedNames.has(n)) {
+      ghosts.push({ name: n, ghost: true, effectiveStatus: { key: 'incident', label: 'On Incident — ' + (e.incident.name || n), cls: 'us-incident' } });
+      trackedNames.add(n);
+    }
+  });
+
+  const counts = { available: 0, incident: 0, maintenance: 0, storage: 0 };
+  [...units, ...ghosts].forEach(u => {
+    const k = u.effectiveStatus.key;
+    if (k === 'incident') counts.incident++;
+    else if (k === 'maintenance') counts.maintenance++;
+    else if (k === 'storage') counts.storage++;
+    else counts.available++;
+  });
+
+  statsEl.innerHTML = [
+    { num: counts.available,    label: 'Available',      color: '#065f46' },
+    { num: counts.incident,     label: 'On Incident',    color: '#92400e' },
+    { num: counts.maintenance,  label: 'In Maintenance', color: '#991b1b' },
+    { num: counts.storage,      label: 'In Storage',     color: '#374151' },
+  ].map(s => `<div class="fleet-stat-card"><div class="fleet-stat-num" style="color:${s.color}">${s.num}</div><div class="fleet-stat-label">${s.label}</div></div>`).join('');
+
+  const all = [...units, ...ghosts];
+  if (!all.length) {
+    unitsEl.innerHTML = '<div class="empty-state"><div class="empty-icon">🚛</div><p>No units added yet. Click <strong>+ Add Unit</strong> to get started.</p></div>';
+    return;
+  }
+
+  unitsEl.innerHTML = all.map(u => {
+    const st = u.effectiveStatus;
+    const vehicleStr = u.ghost ? '' : [u.year, u.make, u.model].filter(Boolean).join(' ');
+    const details = u.ghost
+      ? '<span style="font-size:11px;color:var(--gray-400);font-style:italic">Not in fleet registry — </span><button class="btn btn-primary btn-sm" onclick="addUnitFromName(\''+escHtml(u.name)+'\')">+ Add to Fleet</button>'
+      : (vehicleStr || '<span style="font-size:12px;color:var(--gray-400)">No vehicle info yet</span>');
+    const meta = (!u.ghost && u.license_plate) ? `<span style="font-size:12px;color:var(--gray-500)">${escHtml(u.license_plate)}${u.registered_state ? ' · ' + escHtml(u.registered_state) : ''}</span>` : '';
+    const loc  = (!u.ghost && u.storage_location) ? `<span style="font-size:12px;color:var(--gray-500)">📦 ${escHtml(u.storage_location)}</span>` : '';
+    const editBtn = u.ghost ? '' : `<button class="btn btn-outline btn-sm" onclick="openUnitEdit('${u.id}')">Edit</button>`;
+    return `<div class="unit-row">
+      <div class="unit-name-tag">${escHtml(u.name)}</div>
+      <span class="unit-status-badge ${st.cls}">${escHtml(st.label)}</span>
+      <div style="flex:1;font-size:13px;color:var(--gray-700)">${details}</div>
+      ${meta}${loc}${editBtn}
+    </div>`;
+  }).join('');
+}
+
+function openUnitEdit(id) {
+  _editingUnitId = id;
+  document.getElementById('unit-edit-error').textContent = '';
+  const del = document.getElementById('unit-delete-btn');
+  const nameEl = document.getElementById('unit-edit-name');
+  if (id) {
+    const u = _unitsCache.find(x => x.id === id);
+    if (!u) return;
+    document.getElementById('unit-edit-title').textContent = 'Edit Unit — ' + u.name;
+    nameEl.value = u.name; nameEl.disabled = true;
+    document.getElementById('unit-edit-type').value = u.type || '';
+    document.getElementById('unit-edit-year').value = u.year || '';
+    document.getElementById('unit-edit-make').value = u.make || '';
+    document.getElementById('unit-edit-model').value = u.model || '';
+    document.getElementById('unit-edit-vin').value = u.vin || '';
+    document.getElementById('unit-edit-plate').value = u.license_plate || '';
+    document.getElementById('unit-edit-state').value = u.registered_state || '';
+    document.getElementById('unit-edit-title-check').checked = u.has_title !== false;
+    document.getElementById('unit-edit-length').value = u.length_ft || '';
+    document.getElementById('unit-edit-width').value = u.width_ft || '';
+    document.getElementById('unit-edit-dayrate').value = u.day_rate || '';
+    document.getElementById('unit-edit-status').value = u.manual_status || 'available';
+    document.getElementById('unit-edit-storage').value = u.storage_location || '';
+    document.getElementById('unit-edit-notes').value = u.notes || '';
+    if (del) del.style.display = '';
+  } else {
+    document.getElementById('unit-edit-title').textContent = 'Add Unit';
+    ['unit-edit-type','unit-edit-year','unit-edit-make','unit-edit-model','unit-edit-vin',
+     'unit-edit-plate','unit-edit-state','unit-edit-length','unit-edit-width',
+     'unit-edit-dayrate','unit-edit-storage','unit-edit-notes'].forEach(k => { const el = document.getElementById(k); if (el) el.value = ''; });
+    nameEl.value = ''; nameEl.disabled = false;
+    document.getElementById('unit-edit-title-check').checked = true;
+    document.getElementById('unit-edit-status').value = 'available';
+    if (del) del.style.display = 'none';
+  }
+  document.getElementById('unit-edit-modal').style.display = 'flex';
+}
+
+function addUnitFromName(name) { openUnitEdit(null); document.getElementById('unit-edit-name').value = name; }
+function closeUnitEdit() { document.getElementById('unit-edit-modal').style.display = 'none'; }
+
+async function saveUnit() {
+  const nameEl = document.getElementById('unit-edit-name');
+  const name = nameEl.value.trim();
+  const errEl = document.getElementById('unit-edit-error');
+  if (!name) { errEl.textContent = 'Unit name is required.'; return; }
+  errEl.textContent = '';
+  const row = {
+    name,
+    type: document.getElementById('unit-edit-type').value || null,
+    year: document.getElementById('unit-edit-year').value.trim() || null,
+    make: document.getElementById('unit-edit-make').value.trim() || null,
+    model: document.getElementById('unit-edit-model').value.trim() || null,
+    vin: document.getElementById('unit-edit-vin').value.trim().toUpperCase() || null,
+    license_plate: document.getElementById('unit-edit-plate').value.trim().toUpperCase() || null,
+    registered_state: document.getElementById('unit-edit-state').value.trim().toUpperCase() || null,
+    has_title: document.getElementById('unit-edit-title-check').checked,
+    length_ft: parseFloat(document.getElementById('unit-edit-length').value) || null,
+    width_ft: parseFloat(document.getElementById('unit-edit-width').value) || null,
+    day_rate: parseFloat(document.getElementById('unit-edit-dayrate').value) || null,
+    manual_status: document.getElementById('unit-edit-status').value,
+    storage_location: document.getElementById('unit-edit-storage').value.trim() || null,
+    notes: document.getElementById('unit-edit-notes').value.trim() || null,
+    updated_at: new Date().toISOString(),
+  };
+  let error;
+  if (_editingUnitId) {
+    ({ error } = await _sb.from('units').update(row).eq('id', _editingUnitId));
+  } else {
+    ({ error } = await _sb.from('units').insert(row));
+    if (error && error.message && error.message.toLowerCase().includes('unique')) {
+      errEl.textContent = 'A unit named "' + name + '" already exists.'; return;
+    }
+  }
+  if (error) { errEl.textContent = 'Save failed: ' + error.message; return; }
+  await reloadUnits();
+  closeUnitEdit();
+  renderFleetScreen();
+}
+
+async function deleteUnit() {
+  if (!_editingUnitId) return;
+  const u = _unitsCache.find(x => x.id === _editingUnitId);
+  if (!confirm('Remove ' + (u ? u.name : 'this unit') + ' from the fleet registry? This cannot be undone.')) return;
+  const { error } = await _sb.from('units').delete().eq('id', _editingUnitId);
+  if (error) { document.getElementById('unit-edit-error').textContent = 'Delete failed: ' + error.message; return; }
+  await reloadUnits();
+  closeUnitEdit();
+  renderFleetScreen();
+}
+
+// ══════════ EMPLOYEE PROFILES ══════════
+function openEmployeeProfile(employeeId, employeeName) {
+  const p = _employeeProfiles[employeeId] || {};
+  document.getElementById('profile-employee-id').value = employeeId;
+  document.getElementById('employee-profile-title').textContent = employeeName + ' — Profile';
+  document.getElementById('profile-status').value = p.status || 'available';
+  document.getElementById('profile-shirt').value = p.shirtSize || '';
+  document.getElementById('profile-location').value = p.location || '';
+  document.getElementById('profile-location-date').value = p.locationAsOf || '';
+  document.getElementById('profile-email').value = p.realEmail || '';
+  document.getElementById('profile-availability').value = p.availability || '';
+  document.getElementById('profile-notes').value = p.notes || '';
+  document.getElementById('profile-error').textContent = '';
+  document.getElementById('employee-profile-modal').style.display = 'flex';
+}
+
+function closeEmployeeProfile() { document.getElementById('employee-profile-modal').style.display = 'none'; }
+
+async function saveEmployeeProfile() {
+  const id = document.getElementById('profile-employee-id').value;
+  _employeeProfiles[id] = {
+    status: document.getElementById('profile-status').value,
+    shirtSize: document.getElementById('profile-shirt').value,
+    location: document.getElementById('profile-location').value.trim(),
+    locationAsOf: document.getElementById('profile-location-date').value,
+    realEmail: document.getElementById('profile-email').value.trim(),
+    availability: document.getElementById('profile-availability').value.trim(),
+    notes: document.getElementById('profile-notes').value.trim(),
+  };
+  const { error } = await _sb.from('app_config').upsert({ key: 'employee_profiles', value: _employeeProfiles, updated_at: new Date().toISOString() });
+  if (error) { document.getElementById('profile-error').textContent = 'Save failed: ' + error.message; return; }
+  closeEmployeeProfile();
+  renderEmployeeManager();
+}
+
+// ══════════ INCIDENT LOGISTICS ══════════
+var _transportEntries = [];
+
+function openLogisticsModal() {
+  const inc = state.incident;
+  if (!inc) { alert('No active fire selected.'); return; }
+  document.getElementById('logistics-modal-title').textContent = '📍 Logistics — ' + (inc.name || 'Incident');
+  const acc = inc.accommodations || {};
+  document.getElementById('log-property').value = acc.property || '';
+  document.getElementById('log-town').value = acc.town || '';
+  document.getElementById('log-address').value = acc.address || '';
+  document.getElementById('log-checkin').value = acc.checkIn || '';
+  document.getElementById('log-checkout').value = acc.checkOut || '';
+  document.getElementById('log-hotel-confirm').value = acc.confirmation || '';
+  document.getElementById('log-hotel-notes').value = acc.notes || '';
+  _transportEntries = JSON.parse(JSON.stringify(inc.transportation || []));
+  renderTransportEntries();
+  document.getElementById('incident-logistics-modal').style.display = 'flex';
+}
+
+function closeLogisticsModal() { document.getElementById('incident-logistics-modal').style.display = 'none'; }
+
+function saveLogistics() {
+  const entry = state._incidents.find(i => i.id === state._activeId);
+  if (!entry) return;
+  syncTransportFromDom();
+  entry.incident.accommodations = {
+    property: document.getElementById('log-property').value.trim(),
+    town: document.getElementById('log-town').value.trim(),
+    address: document.getElementById('log-address').value.trim(),
+    checkIn: document.getElementById('log-checkin').value,
+    checkOut: document.getElementById('log-checkout').value,
+    confirmation: document.getElementById('log-hotel-confirm').value.trim(),
+    notes: document.getElementById('log-hotel-notes').value.trim(),
+  };
+  entry.incident.transportation = _transportEntries;
+  saveState();
+  closeLogisticsModal();
+}
+
+function addTransportEntry() {
+  syncTransportFromDom();
+  _transportEntries.push({ id: 'tp_' + Date.now() + '_' + Math.random().toString(36).slice(2,5), person: '', vehicle: '', pickupLocation: '', pickupDate: '', returnLocation: '', returnDate: '', notes: '' });
+  renderTransportEntries();
+}
+
+function removeTransportEntry(id) {
+  syncTransportFromDom();
+  _transportEntries = _transportEntries.filter(t => t.id !== id);
+  renderTransportEntries();
+}
+
+function syncTransportFromDom() {
+  _transportEntries.forEach(t => {
+    ['person','vehicle','pickupLocation','pickupDate','returnLocation','returnDate','notes'].forEach(field => {
+      const el = document.getElementById('tp-' + field + '-' + t.id);
+      if (el) t[field] = el.value;
+    });
+  });
+}
+
+function renderTransportEntries() {
+  const list = document.getElementById('transport-entries-list');
+  if (!list) return;
+  if (!_transportEntries.length) {
+    list.innerHTML = '<div style="font-size:12px;color:var(--gray-400);font-style:italic;padding:8px 0">No entries yet — click + Add.</div>';
+    return;
+  }
+  list.innerHTML = _transportEntries.map(t => `
+    <div class="logistics-entry">
+      <div style="display:flex;justify-content:flex-end;margin-bottom:10px">
+        <button class="btn btn-danger btn-sm" onclick="removeTransportEntry('${t.id}')">Remove</button>
+      </div>
+      <div class="form-grid" style="margin-bottom:10px">
+        <div class="form-group"><label>Person / Driver</label><input type="text" id="tp-person-${t.id}" value="${escHtml(t.person||'')}" placeholder="Name"></div>
+        <div class="form-group"><label>Vehicle</label><input type="text" id="tp-vehicle-${t.id}" value="${escHtml(t.vehicle||'')}" placeholder="e.g. 2022 Toyota Camry"></div>
+      </div>
+      <div class="form-grid" style="margin-bottom:10px">
+        <div class="form-group"><label>Pickup Location</label><input type="text" id="tp-pickupLocation-${t.id}" value="${escHtml(t.pickupLocation||'')}"></div>
+        <div class="form-group"><label>Pickup Date</label><input type="date" id="tp-pickupDate-${t.id}" value="${escHtml(t.pickupDate||'')}"></div>
+      </div>
+      <div class="form-grid" style="margin-bottom:10px">
+        <div class="form-group"><label>Return Location</label><input type="text" id="tp-returnLocation-${t.id}" value="${escHtml(t.returnLocation||'')}"></div>
+        <div class="form-group"><label>Return Date</label><input type="date" id="tp-returnDate-${t.id}" value="${escHtml(t.returnDate||'')}"></div>
+      </div>
+      <div class="form-group"><label>Notes</label><input type="text" id="tp-notes-${t.id}" value="${escHtml(t.notes||'')}" placeholder="Optional"></div>
+    </div>
+  `).join('');
 }
 
 function deleteInventoryItem(id) {
