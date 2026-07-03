@@ -6170,31 +6170,42 @@ function computeSeasonStats(year) {
   const monthDays = new Array(12).fill(0);
   state._incidents.forEach(e => {
     if (!e.incident) return;
-    const orders = (e.orders || []).filter(o => o.date && (!filterByYear || o.date.startsWith(year)));
-    if (!orders.length) return;
-    const agency = e.incident.agency || 'federal';
-    const dayRate = e.incident.dayRate || 0;
-    const addStaffRate = e.incident.addStaff
-      ? (e.incident.additionalStaff || []).reduce((s, x) => s + (x.rate || 0), 0)
+    const inc = e.incident;
+    const simple = isSimpleUnit(inc);
+    const agency = inc.agency || 'federal';
+    const dayRate = inc.dayRate || 0;
+    const addStaffRate = inc.addStaff
+      ? (inc.additionalStaff || []).reduce((s, x) => s + (x.rate || 0), 0)
       : 0;
-    const perDayRate = dayRate + addStaffRate;
-    let incRevenue = 0;
-    orders.forEach(o => {
-      const orderRev = calcOrderTotal(o, agency);
-      const dayRev = perDayRate + orderRev;
-      incRevenue += dayRev;
-      const m = parseInt(o.date.substring(5,7)) - 1;
-      monthRevenue[m] += dayRev;
+    // Billing dates: heli/comms use approvedDates only; clerical uses union
+    const orderDates = new Set(
+      (e.orders || []).filter(o => o.date && (!filterByYear || o.date.startsWith(year))).map(o => o.date)
+    );
+    const approvedDates = new Set(
+      (e.approvedDates || []).filter(d => !filterByYear || d.startsWith(year))
+    );
+    const billingDates = simple ? approvedDates : new Set([...orderDates, ...approvedDates]);
+    if (billingDates.size === 0) return;
+    const days = billingDates.size;
+    // Service total: copy/plot/etc orders (zero for heli/comms)
+    const serviceTotal = simple ? 0 : (e.orders || [])
+      .filter(o => o.date && (!filterByYear || o.date.startsWith(year)))
+      .reduce((s, o) => s + calcOrderTotal(o, agency), 0);
+    const incRevenue = serviceTotal + days * (dayRate + addStaffRate);
+    // Monthly breakdown — day-rate portion per billing date
+    [...billingDates].forEach(date => {
+      const m = parseInt(date.substring(5,7)) - 1;
+      monthRevenue[m] += dayRate + addStaffRate;
       monthDays[m] += 1;
     });
-    incStats.push({
-      name: e.incident.name || 'Unnamed Fire',
-      eNumber: e.incident.eNumber || '',
-      agency,
-      unit: e.incident.unit || '—',
-      days: orders.length,
-      revenue: incRevenue,
-    });
+    // Monthly breakdown — service totals by order date (clerical only)
+    if (!simple) {
+      (e.orders || []).filter(o => o.date && (!filterByYear || o.date.startsWith(year))).forEach(o => {
+        const m = parseInt(o.date.substring(5,7)) - 1;
+        monthRevenue[m] += calcOrderTotal(o, agency);
+      });
+    }
+    incStats.push({ name: inc.name || 'Unnamed Fire', eNumber: inc.eNumber || '', agency, unit: inc.unit || '—', days, revenue: incRevenue });
   });
   const totalRevenue = incStats.reduce((s,i) => s+i.revenue, 0);
   const totalDays = incStats.reduce((s,i) => s+i.days, 0);
