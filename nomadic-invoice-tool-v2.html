@@ -843,7 +843,6 @@ body {
     <button class="btn btn-outline btn-sm" onclick="openFireSelector()" id="switch-fire-btn" style="display:none; color:var(--amber); border-color:var(--amber)">⇄ Switch Fire</button>
     <button class="btn btn-outline btn-sm" onclick="openIncidentManager()" id="manage-incidents-btn" style="display:none; color:var(--gray-200); border-color:var(--navy-mid)">⚙ Incidents</button>
     <button class="btn btn-outline btn-sm" onclick="openEmployeeManager()" id="manage-employees-btn" style="display:none; color:var(--gray-200); border-color:var(--navy-mid)">👥 Employees</button>
-    <button class="btn btn-outline btn-sm" onclick="openLogisticsModal()" id="logistics-btn" style="display:none; color:var(--gray-200); border-color:var(--navy-mid)">📍 Logistics</button>
     <span id="sync-pulse" style="font-size:11px;color:#6aaa6e;opacity:0;transition:opacity 0.6s;letter-spacing:1px">⟳ SYNCED</span>
     <span id="last-saved-display" style="font-size:11px;color:var(--gray-400);letter-spacing:0.5px"></span>
     <span id="local-backup-display" style="font-size:11px;color:var(--gray-400);letter-spacing:0.5px"></span>
@@ -3850,7 +3849,6 @@ function showAdminLogin() {
     if (el('nav-fleet'))            el('nav-fleet').style.display = '';
     if (el('nav-lock'))             el('nav-lock').style.display = '';
     if (el('manage-incidents-btn')) el('manage-incidents-btn').style.display = '';
-    if (el('logistics-btn'))        el('logistics-btn').style.display = '';
     if (el('day-total-box'))        el('day-total-box').style.display = '';
     renderRatesAdmin();
     updateDayTotalBox(document.getElementById('daily-date').value);
@@ -4140,9 +4138,18 @@ async function renderEmployeeManager() {
       const additional = inc.addStaff ? (inc.additionalStaff || []).map(s => s.name).filter(Boolean) : [];
       const all = [...primary, ...additional];
       if (!all.length) return '';
-      return `<div style="margin-bottom:10px">
-        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--gray-400);margin-bottom:4px">${escHtml(inc.name || 'Unnamed Fire')}</div>
-        ${all.map(n => `<div style="font-size:13px;color:var(--navy);padding:3px 0">${escHtml(n)}</div>`).join('')}
+      const logMap = inc.employeeLogistics || {};
+      return `<div style="margin-bottom:12px">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--gray-400);margin-bottom:6px">${escHtml(inc.name || 'Unnamed Fire')}</div>
+        ${all.map(n => {
+          const town = ((logMap[n] || {}).accommodations || {}).town;
+          const chip = town ? `<span style="font-size:11px;color:var(--gray-400);margin-left:6px">📍 ${escHtml(town)}</span>` : '';
+          const safeN = n.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+          return `<div style="display:flex;align-items:center;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--gray-100)">
+            <div style="font-size:13px;color:var(--navy)">${escHtml(n)}${chip}</div>
+            <button class="btn btn-outline btn-sm" onclick="openLogisticsModal('${safeN}','${e.id}')">📍 Logistics</button>
+          </div>`;
+        }).join('')}
       </div>`;
     }).filter(Boolean).join('');
     if (!rows) return '';
@@ -5549,8 +5556,11 @@ function getUnitCurrentLocation(u, effectiveStatus) {
   if (effectiveStatus.key === 'incident') {
     const entry = state._incidents.find(e => e.incident && e.incident.unit === u.name);
     if (entry) {
-      const town = entry.incident.accommodations && entry.incident.accommodations.town;
-      if (town) return town;
+      const logMap = entry.incident.employeeLogistics || {};
+      for (const staffName of Object.keys(logMap)) {
+        const town = logMap[staffName].accommodations && logMap[staffName].accommodations.town;
+        if (town) return town;
+      }
     }
     return null;
   }
@@ -5615,12 +5625,18 @@ async function saveEmployeeProfile() {
 
 // ══════════ INCIDENT LOGISTICS ══════════
 var _transportEntries = [];
+var _logisticsStaffName = null;
+var _logisticsIncidentId = null;
 
-function openLogisticsModal() {
-  const inc = state.incident;
-  if (!inc) { alert('No active fire selected.'); return; }
-  document.getElementById('logistics-modal-title').textContent = '📍 Logistics — ' + (inc.name || 'Incident');
-  const acc = inc.accommodations || {};
+function openLogisticsModal(staffName, incidentId) {
+  _logisticsStaffName = staffName;
+  _logisticsIncidentId = incidentId;
+  const incEntry = state._incidents.find(i => i.id === incidentId);
+  if (!incEntry) return;
+  const inc = incEntry.incident;
+  document.getElementById('logistics-modal-title').textContent = '📍 ' + staffName + ' — ' + (inc.name || 'Incident');
+  const data = (inc.employeeLogistics || {})[staffName] || {};
+  const acc = data.accommodations || {};
   document.getElementById('log-property').value = acc.property || '';
   document.getElementById('log-town').value = acc.town || '';
   document.getElementById('log-address').value = acc.address || '';
@@ -5628,7 +5644,7 @@ function openLogisticsModal() {
   document.getElementById('log-checkout').value = acc.checkOut || '';
   document.getElementById('log-hotel-confirm').value = acc.confirmation || '';
   document.getElementById('log-hotel-notes').value = acc.notes || '';
-  _transportEntries = JSON.parse(JSON.stringify(inc.transportation || []));
+  _transportEntries = JSON.parse(JSON.stringify(data.transportation || []));
   renderTransportEntries();
   document.getElementById('incident-logistics-modal').style.display = 'flex';
 }
@@ -5636,19 +5652,22 @@ function openLogisticsModal() {
 function closeLogisticsModal() { document.getElementById('incident-logistics-modal').style.display = 'none'; }
 
 function saveLogistics() {
-  const entry = state._incidents.find(i => i.id === state._activeId);
-  if (!entry) return;
+  const entry = state._incidents.find(i => i.id === _logisticsIncidentId);
+  if (!entry || !_logisticsStaffName) return;
   syncTransportFromDom();
-  entry.incident.accommodations = {
-    property: document.getElementById('log-property').value.trim(),
-    town: document.getElementById('log-town').value.trim(),
-    address: document.getElementById('log-address').value.trim(),
-    checkIn: document.getElementById('log-checkin').value,
-    checkOut: document.getElementById('log-checkout').value,
-    confirmation: document.getElementById('log-hotel-confirm').value.trim(),
-    notes: document.getElementById('log-hotel-notes').value.trim(),
+  if (!entry.incident.employeeLogistics) entry.incident.employeeLogistics = {};
+  entry.incident.employeeLogistics[_logisticsStaffName] = {
+    accommodations: {
+      property: document.getElementById('log-property').value.trim(),
+      town: document.getElementById('log-town').value.trim(),
+      address: document.getElementById('log-address').value.trim(),
+      checkIn: document.getElementById('log-checkin').value,
+      checkOut: document.getElementById('log-checkout').value,
+      confirmation: document.getElementById('log-hotel-confirm').value.trim(),
+      notes: document.getElementById('log-hotel-notes').value.trim(),
+    },
+    transportation: _transportEntries,
   };
-  entry.incident.transportation = _transportEntries;
   saveState();
   closeLogisticsModal();
 }
