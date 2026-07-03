@@ -1402,8 +1402,7 @@ body {
           <label>Type</label>
           <select id="unit-edit-type">
             <option value="">— Select —</option>
-            <option>Trailer</option><option>Van</option><option>Truck</option>
-            <option>SUV</option><option>Box Truck</option><option>Other</option>
+            <option>Helicopter Support</option><option>Communications Trailer</option><option>Clerical Support</option>
           </select>
         </div>
       </div>
@@ -1415,7 +1414,21 @@ body {
       <div class="form-grid" style="margin-bottom:14px">
         <div class="form-group"><label>VIN</label><input type="text" id="unit-edit-vin" placeholder="17-char VIN" style="font-family:'IBM Plex Mono',monospace;font-size:12px;text-transform:uppercase"></div>
         <div class="form-group"><label>License Plate</label><input type="text" id="unit-edit-plate" placeholder="e.g. ABC1234" style="text-transform:uppercase"></div>
-        <div class="form-group"><label>Reg. State</label><input type="text" id="unit-edit-state" placeholder="CA" maxlength="2" style="text-transform:uppercase"></div>
+        <div class="form-group"><label>Reg. State</label><input type="text" id="unit-edit-state" placeholder="CA" maxlength="2" style="text-transform:uppercase" oninput="onRegStateChange()"></div>
+      </div>
+      <div class="form-grid" style="margin-bottom:14px">
+        <div class="form-group">
+          <label>Reg. Expiration</label>
+          <input type="date" id="unit-edit-reg-exp">
+        </div>
+        <div class="form-group" style="display:flex;align-items:center;gap:10px;padding-top:22px">
+          <label class="toggle"><input type="checkbox" id="unit-edit-no-exp" onchange="onNoExpChange()"><span class="toggle-slider"></span></label>
+          <span style="font-size:13px;font-weight:500">No Expiration (MT)</span>
+        </div>
+      </div>
+      <div class="form-grid" style="margin-bottom:14px">
+        <div class="form-group"><label>Dispatch Location — Forest Service</label><input type="text" id="unit-edit-dispatch-fs" placeholder="e.g. Plumas NF Dispatch"></div>
+        <div class="form-group"><label>Dispatch Location — CalFire</label><input type="text" id="unit-edit-dispatch-cf" placeholder="e.g. TCU ECC"></div>
       </div>
       <div class="form-grid" style="margin-bottom:14px">
         <div class="form-group" style="display:flex;align-items:center;gap:10px;padding-top:22px">
@@ -5362,18 +5375,45 @@ async function renderFleetScreen() {
 
   unitsEl.innerHTML = all.map(u => {
     const st = u.effectiveStatus;
-    const vehicleStr = u.ghost ? '' : [u.year, u.make, u.model].filter(Boolean).join(' ');
-    const details = u.ghost
-      ? '<span style="font-size:11px;color:var(--gray-400);font-style:italic">Not in fleet registry — </span><button class="btn btn-primary btn-sm" onclick="addUnitFromName(\''+escHtml(u.name)+'\')">+ Add to Fleet</button>'
-      : (vehicleStr || '<span style="font-size:12px;color:var(--gray-400)">No vehicle info yet</span>');
-    const meta = (!u.ghost && u.license_plate) ? `<span style="font-size:12px;color:var(--gray-500)">${escHtml(u.license_plate)}${u.registered_state ? ' · ' + escHtml(u.registered_state) : ''}</span>` : '';
-    const loc  = (!u.ghost && u.storage_location) ? `<span style="font-size:12px;color:var(--gray-500)">📦 ${escHtml(u.storage_location)}</span>` : '';
     const editBtn = u.ghost ? '' : `<button class="btn btn-outline btn-sm" onclick="openUnitEdit('${u.id}')">Edit</button>`;
+
+    if (u.ghost) {
+      return `<div class="unit-row">
+        <div class="unit-name-tag">${escHtml(u.name)}</div>
+        <span class="unit-status-badge ${st.cls}">${escHtml(st.label)}</span>
+        <div style="flex:1;font-size:12px;color:var(--gray-400);font-style:italic">Not in fleet registry — <button class="btn btn-primary btn-sm" onclick="addUnitFromName('${escHtml(u.name)}')">+ Add to Fleet</button></div>
+      </div>`;
+    }
+
+    const vehicleStr = [u.year, u.make, u.model].filter(Boolean).join(' ');
+    const plate = u.license_plate ? `<span style="font-size:12px;color:var(--gray-400)">${escHtml(u.license_plate)}${u.registered_state ? ' · ' + escHtml(u.registered_state) : ''}</span>` : '';
+
+    const currentLoc = getUnitCurrentLocation(u, st);
+    const vinLast4   = (u.vin && u.vin.length >= 4) ? '···' + u.vin.slice(-4) : null;
+    const dispFS     = u.dispatch_location_fs || null;
+    const dispCF     = u.dispatch_location_cf || null;
+
+    const chips = [
+      currentLoc ? `<span style="font-size:12px;color:var(--gray-600)">📍 ${escHtml(currentLoc)}</span>` : '',
+      vinLast4   ? `<span style="font-size:12px;color:var(--gray-500);font-family:'IBM Plex Mono',monospace">${escHtml(vinLast4)}</span>` : '',
+      dispFS     ? `<span style="font-size:12px;color:var(--gray-500)">FS: ${escHtml(dispFS)}</span>` : '',
+      dispCF     ? `<span style="font-size:12px;color:var(--gray-500)">CF: ${escHtml(dispCF)}</span>` : '',
+    ].filter(Boolean);
+    const detailLine = chips.length
+      ? `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:5px">${chips.join('<span style="color:var(--gray-300)">·</span>')}</div>`
+      : '';
+
     return `<div class="unit-row">
       <div class="unit-name-tag">${escHtml(u.name)}</div>
-      <span class="unit-status-badge ${st.cls}">${escHtml(st.label)}</span>
-      <div style="flex:1;font-size:13px;color:var(--gray-700)">${details}</div>
-      ${meta}${loc}${editBtn}
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <span class="unit-status-badge ${st.cls}">${escHtml(st.label)}</span>
+          ${vehicleStr ? `<span style="font-size:13px;color:var(--gray-700)">${escHtml(vehicleStr)}</span>` : '<span style="font-size:12px;color:var(--gray-400)">No vehicle info yet</span>'}
+          ${plate}
+        </div>
+        ${detailLine}
+      </div>
+      ${editBtn}
     </div>`;
   }).join('');
 }
@@ -5402,15 +5442,24 @@ function openUnitEdit(id) {
     document.getElementById('unit-edit-status').value = u.manual_status || 'available';
     document.getElementById('unit-edit-storage').value = u.storage_location || '';
     document.getElementById('unit-edit-notes').value = u.notes || '';
+    document.getElementById('unit-edit-dispatch-fs').value = u.dispatch_location_fs || '';
+    document.getElementById('unit-edit-dispatch-cf').value = u.dispatch_location_cf || '';
+    const noExp = u.reg_no_expiration || false;
+    document.getElementById('unit-edit-no-exp').checked = noExp;
+    document.getElementById('unit-edit-reg-exp').value = noExp ? '' : (u.reg_expiration || '');
+    document.getElementById('unit-edit-reg-exp').disabled = noExp;
     if (del) del.style.display = '';
   } else {
     document.getElementById('unit-edit-title').textContent = 'Add Unit';
     ['unit-edit-type','unit-edit-year','unit-edit-make','unit-edit-model','unit-edit-vin',
      'unit-edit-plate','unit-edit-state','unit-edit-length','unit-edit-width',
-     'unit-edit-dayrate','unit-edit-storage','unit-edit-notes'].forEach(k => { const el = document.getElementById(k); if (el) el.value = ''; });
+     'unit-edit-dayrate','unit-edit-storage','unit-edit-notes',
+     'unit-edit-dispatch-fs','unit-edit-dispatch-cf','unit-edit-reg-exp'].forEach(k => { const el = document.getElementById(k); if (el) el.value = ''; });
     nameEl.value = ''; nameEl.disabled = false;
     document.getElementById('unit-edit-title-check').checked = true;
     document.getElementById('unit-edit-status').value = 'available';
+    document.getElementById('unit-edit-no-exp').checked = false;
+    document.getElementById('unit-edit-reg-exp').disabled = false;
     if (del) del.style.display = 'none';
   }
   document.getElementById('unit-edit-modal').style.display = 'flex';
@@ -5441,6 +5490,10 @@ async function saveUnit() {
     manual_status: document.getElementById('unit-edit-status').value,
     storage_location: document.getElementById('unit-edit-storage').value.trim() || null,
     notes: document.getElementById('unit-edit-notes').value.trim() || null,
+    dispatch_location_fs: document.getElementById('unit-edit-dispatch-fs').value.trim() || null,
+    dispatch_location_cf: document.getElementById('unit-edit-dispatch-cf').value.trim() || null,
+    reg_no_expiration: document.getElementById('unit-edit-no-exp').checked,
+    reg_expiration: document.getElementById('unit-edit-no-exp').checked ? null : (document.getElementById('unit-edit-reg-exp').value || null),
     updated_at: new Date().toISOString(),
   };
   let error;
@@ -5467,6 +5520,39 @@ async function deleteUnit() {
   await reloadUnits();
   closeUnitEdit();
   renderFleetScreen();
+}
+
+function getUnitCurrentLocation(u, effectiveStatus) {
+  if (effectiveStatus.key === 'incident') {
+    const entry = state._incidents.find(e => e.incident && e.incident.unit === u.name);
+    if (entry) {
+      const town = entry.incident.accommodations && entry.incident.accommodations.town;
+      if (town) return town;
+    }
+    return null;
+  }
+  return u.storage_location || null;
+}
+
+function onRegStateChange() {
+  const val = (document.getElementById('unit-edit-state').value || '').toUpperCase();
+  const noExpChk = document.getElementById('unit-edit-no-exp');
+  const expInput = document.getElementById('unit-edit-reg-exp');
+  if (val === 'MT') {
+    noExpChk.checked = true;
+    expInput.disabled = true;
+    expInput.value = '';
+  } else {
+    noExpChk.checked = false;
+    expInput.disabled = false;
+  }
+}
+
+function onNoExpChange() {
+  const checked = document.getElementById('unit-edit-no-exp').checked;
+  const expInput = document.getElementById('unit-edit-reg-exp');
+  expInput.disabled = checked;
+  if (checked) expInput.value = '';
 }
 
 // ══════════ EMPLOYEE PROFILES ══════════
