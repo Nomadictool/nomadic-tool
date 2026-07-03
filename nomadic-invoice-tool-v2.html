@@ -1527,6 +1527,7 @@ body {
       <button onclick="closeLogisticsModal()" style="background:none;border:none;color:var(--gray-400);font-size:20px;cursor:pointer">✕</button>
     </div>
     <div class="modal-body">
+      <div id="log-accommodations-section">
       <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--gray-400);margin-bottom:12px">Accommodations</div>
       <div class="form-grid" style="margin-bottom:12px">
         <div class="form-group"><label>Property Name</label><input type="text" id="log-property" placeholder="e.g. Holiday Inn Express"></div>
@@ -1544,6 +1545,7 @@ body {
         <label>Notes</label>
         <textarea id="log-hotel-notes" rows="2" style="width:100%;padding:8px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:13px;font-family:inherit;resize:vertical"></textarea>
       </div>
+      </div><!-- end log-accommodations-section -->
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
         <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--gray-400)">Transportation</div>
         <button class="btn btn-outline btn-sm" onclick="addTransportEntry()">+ Add</button>
@@ -4139,15 +4141,30 @@ async function renderEmployeeManager() {
       const all = [...primary, ...additional];
       if (!all.length) return '';
       const logMap = inc.employeeLogistics || {};
-      return `<div style="margin-bottom:12px">
-        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--gray-400);margin-bottom:6px">${escHtml(inc.name || 'Unnamed Fire')}</div>
+      return `<div style="margin-bottom:16px">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--gray-400);margin-bottom:8px">${escHtml(inc.name || 'Unnamed Fire')}</div>
         ${all.map(n => {
-          const town = ((logMap[n] || {}).accommodations || {}).town;
-          const chip = town ? `<span style="font-size:11px;color:var(--gray-400);margin-left:6px">📍 ${escHtml(town)}</span>` : '';
+          const acc = ((logMap[n] || {}).accommodations || {});
           const safeN = n.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-          return `<div style="display:flex;align-items:center;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--gray-100)">
-            <div style="font-size:13px;color:var(--navy)">${escHtml(n)}${chip}</div>
-            <button class="btn btn-outline btn-sm" onclick="openLogisticsModal('${safeN}','${e.id}')">📍 Logistics</button>
+          const fid = (f) => `li-${e.id}-${n.replace(/[^a-z0-9]/gi,'_')}-${f}`;
+          const inp = (f, type, placeholder, val, extra='') =>
+            `<input type="${type}" id="${fid(f)}" value="${escHtml(val||'')}" placeholder="${placeholder}"
+              style="width:100%;padding:5px 7px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:12px;font-family:inherit;box-sizing:border-box"
+              onchange="onLogisticsFieldChange('${e.id}','${safeN}','${f}',this.value)" ${extra}>`;
+          const hasTransport = (logMap[n] || {}).transportation && (logMap[n] || {}).transportation.length > 0;
+          return `<div style="background:var(--off-white);border:1px solid var(--gray-200);border-radius:var(--radius);padding:10px 12px;margin-bottom:8px">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+              <div style="font-weight:600;font-size:13px;color:var(--navy)">${escHtml(n)}</div>
+              <button class="btn btn-outline btn-sm" onclick="openTransportModal('${safeN}','${e.id}')" title="Manage transportation">🚗 Transport${hasTransport ? ' ✓' : ''}</button>
+            </div>
+            <div style="display:grid;grid-template-columns:2fr 2fr 1fr 1fr 1fr;gap:6px;align-items:start">
+              <div><div style="font-size:10px;color:var(--gray-400);margin-bottom:2px">HOTEL / PROPERTY</div>${inp('property','text','Holiday Inn Express',acc.property)}</div>
+              <div><div style="font-size:10px;color:var(--gray-400);margin-bottom:2px">TOWN / CITY</div>${inp('town','text','Redding, CA',acc.town)}</div>
+              <div><div style="font-size:10px;color:var(--gray-400);margin-bottom:2px">CHECK-IN</div>${inp('checkIn','date','',acc.checkIn)}</div>
+              <div><div style="font-size:10px;color:var(--gray-400);margin-bottom:2px">CHECK-OUT</div>${inp('checkOut','date','',acc.checkOut)}</div>
+              <div><div style="font-size:10px;color:var(--gray-400);margin-bottom:2px">CONFIRM #</div>${inp('confirmation','text','ABC123',acc.confirmation)}</div>
+            </div>
+            <div style="margin-top:6px"><div style="font-size:10px;color:var(--gray-400);margin-bottom:2px">ADDRESS</div>${inp('address','text','Street address',acc.address)}</div>
           </div>`;
         }).join('')}
       </div>`;
@@ -5646,10 +5663,25 @@ function openLogisticsModal(staffName, incidentId) {
   document.getElementById('log-hotel-notes').value = acc.notes || '';
   _transportEntries = JSON.parse(JSON.stringify(data.transportation || []));
   renderTransportEntries();
+  document.getElementById('log-accommodations-section').style.display = '';
   document.getElementById('incident-logistics-modal').style.display = 'flex';
 }
 
 function closeLogisticsModal() { document.getElementById('incident-logistics-modal').style.display = 'none'; }
+
+function openTransportModal(staffName, incidentId) {
+  openLogisticsModal(staffName, incidentId);
+  document.getElementById('log-accommodations-section').style.display = 'none';
+}
+
+function onLogisticsFieldChange(incidentId, staffName, field, value) {
+  const entry = state._incidents.find(i => i.id === incidentId);
+  if (!entry) return;
+  if (!entry.incident.employeeLogistics) entry.incident.employeeLogistics = {};
+  if (!entry.incident.employeeLogistics[staffName]) entry.incident.employeeLogistics[staffName] = { accommodations: {}, transportation: [] };
+  entry.incident.employeeLogistics[staffName].accommodations[field] = value;
+  saveState();
+}
 
 function saveLogistics() {
   const entry = state._incidents.find(i => i.id === _logisticsIncidentId);
