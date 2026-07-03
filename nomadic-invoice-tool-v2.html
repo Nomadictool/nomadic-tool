@@ -1540,16 +1540,43 @@ body {
         <div class="form-group"><label>Check-Out</label><input type="date" id="log-checkout"></div>
         <div class="form-group"><label>Confirmation #</label><input type="text" id="log-hotel-confirm" placeholder="ABC123"></div>
       </div>
-      <div class="form-group" style="margin-bottom:24px">
+      <div style="margin-bottom:12px">
+        <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+          <label style="display:flex;align-items:center;gap:7px;font-size:13px;cursor:pointer;font-weight:500">
+            <input type="checkbox" id="log-double-occ" onchange="document.getElementById('log-roommate-row').style.display=this.checked?'flex':'none'">
+            Double Occupancy
+          </label>
+          <div id="log-roommate-row" style="display:none;align-items:center;gap:8px;flex:1">
+            <label style="font-size:12px;white-space:nowrap;color:var(--gray-500)">Roommate:</label>
+            <input type="text" id="log-roommate" placeholder="Name" style="flex:1;padding:5px 8px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:13px;font-family:inherit">
+          </div>
+        </div>
+      </div>
+      <div class="form-group" style="margin-bottom:12px">
         <label>Notes</label>
         <textarea id="log-hotel-notes" rows="2" style="width:100%;padding:8px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:13px;font-family:inherit;resize:vertical"></textarea>
       </div>
       </div><!-- end log-accommodations-section -->
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--gray-400)">Transportation</div>
-        <button class="btn btn-outline btn-sm" onclick="addTransportEntry()">+ Add</button>
+      <div style="border-top:1px solid var(--gray-200);padding-top:14px">
+        <label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;cursor:pointer;margin-bottom:10px">
+          <input type="checkbox" id="log-rental" onchange="document.getElementById('log-rental-fields').style.display=this.checked?'block':'none'">
+          Rental Car
+        </label>
+        <div id="log-rental-fields" style="display:none">
+          <div class="form-grid" style="margin-bottom:10px">
+            <div class="form-group"><label>Rental Company</label><input type="text" id="log-rental-company" placeholder="Enterprise, Hertz…"></div>
+            <div class="form-group"><label>Notes</label><input type="text" id="log-rental-notes" placeholder="Optional"></div>
+          </div>
+          <div class="form-grid" style="margin-bottom:10px">
+            <div class="form-group"><label>Pickup Location</label><input type="text" id="log-rental-pickup-loc" placeholder="Airport, city…"></div>
+            <div class="form-group"><label>Pickup Date</label><input type="date" id="log-rental-pickup-date"></div>
+          </div>
+          <div class="form-grid">
+            <div class="form-group"><label>Return Location</label><input type="text" id="log-rental-return-loc" placeholder="Airport, city…"></div>
+            <div class="form-group"><label>Return Date</label><input type="date" id="log-rental-return-date"></div>
+          </div>
+        </div>
       </div>
-      <div id="transport-entries-list"></div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="closeLogisticsModal()">Cancel</button>
@@ -1580,12 +1607,19 @@ body {
       </div>
       <div class="form-grid" style="margin-bottom:12px">
         <div class="form-group"><label>Location</label><input type="text" id="roster-entry-location" placeholder="City, State"></div>
-        <div class="form-group"><label>Location As Of</label><input type="date" id="roster-entry-location-date"></div>
+        <div class="form-group"><label>Available As Of</label><input type="date" id="roster-entry-location-date"></div>
       </div>
       <div class="form-group" style="margin-bottom:12px"><label>Phone</label><input type="text" id="roster-entry-phone" placeholder="555-555-5555"></div>
-      <div class="form-group">
+      <div class="form-group" style="margin-bottom:12px">
         <label>Notes</label>
         <textarea id="roster-entry-notes" rows="2" style="width:100%;padding:8px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:13px;font-family:inherit;resize:vertical"></textarea>
+      </div>
+      <div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+          <label style="font-size:13px;font-weight:500">Blackout Dates</label>
+          <button type="button" class="btn btn-outline btn-sm" onclick="addBlackoutRow()">+ Add</button>
+        </div>
+        <div id="blackout-rows"><div style="font-size:12px;color:var(--gray-400);font-style:italic">No blackout dates added.</div></div>
       </div>
     </div>
     <div class="modal-footer" style="justify-content:space-between">
@@ -4156,10 +4190,11 @@ function deleteIncident(id) {
 }
 
 // ══════════ EMPLOYEE MANAGER (admin only) ══════════
-function openEmployeeManager() {
+async function openEmployeeManager() {
   if (!state.isAdmin) return;
-  renderEmployeeManager();
   document.getElementById('employee-manager-modal').style.display = 'flex';
+  await autoPopulateRosterFromFires();
+  renderEmployeeManager();
 }
 function closeEmployeeManager() {
   document.getElementById('employee-manager-modal').style.display = 'none';
@@ -4178,20 +4213,25 @@ async function renderEmployeeManager() {
     inactive:    { label: 'Inactive',    bg: '#fee2e2', color: '#991b1b' },
     on_incident: { label: 'On Incident', bg: '#fef3c7', color: '#92400e' },
   };
+  const today = new Date().toISOString().split('T')[0];
   const rosterRows = _rosterCache.map(p => {
     const fireName = getPersonActiveFire(p.name);
     const statusKey = fireName ? 'on_incident' : (p.status || 'available');
     const s = statusCfg[statusKey] || statusCfg.available;
-    const safeId = p.id.replace(/[^a-z0-9_]/gi, '_');
+    const upcomingBlackouts = (p.blackoutDates || []).filter(b => b.start && (b.end || b.start) >= today);
+    const blackoutChip = upcomingBlackouts.length
+      ? `<span style="font-size:10px;background:#fef3c7;color:#92400e;padding:2px 8px;border-radius:10px;white-space:nowrap">⚠ ${upcomingBlackouts.length} blackout${upcomingBlackouts.length>1?'s':''}</span>`
+      : '';
     return `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--gray-100);flex-wrap:wrap">
       <div style="min-width:140px;font-weight:600;font-size:13px;color:${statusKey==='inactive'?'var(--gray-400)':'var(--navy)'}">${escHtml(p.name)}</div>
       <span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px;background:${s.bg};color:${s.color};white-space:nowrap">${s.label}${fireName ? ' — ' + escHtml(fireName) : ''}</span>
+      ${blackoutChip}
       <input type="text" value="${escHtml(p.location||'')}" placeholder="Location"
         style="flex:1;min-width:120px;padding:4px 7px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:12px;font-family:inherit"
         onchange="updateRosterInline('${p.id}','location',this.value)">
-      <input type="date" value="${escHtml(p.locationAsOf||'')}" title="Location as of"
+      <input type="date" value="${escHtml(p.availableAsOf||p.locationAsOf||'')}" title="Available As Of"
         style="padding:4px 7px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:12px;font-family:inherit"
-        onchange="updateRosterInline('${p.id}','locationAsOf',this.value)">
+        onchange="updateRosterInline('${p.id}','availableAsOf',this.value)">
       <button class="btn btn-outline btn-sm" onclick="openRosterEntry('${p.id}')">Edit</button>
     </div>`;
   }).join('');
@@ -4216,19 +4256,24 @@ async function renderEmployeeManager() {
     return `<div style="margin-bottom:16px">
       <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--gray-400);margin-bottom:8px">${escHtml(inc.name || 'Unnamed Fire')}</div>
       ${all.map(n => {
-        const acc = ((logMap[n] || {}).accommodations || {});
+        const empLog = logMap[n] || {};
+        const acc = (empLog.accommodations || {});
+        const rental = (empLog.rental || {});
         const safeN = n.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+        const uid = `${e.id}_${n.replace(/[^a-z0-9]/gi,'_')}`;
         const fid = (f) => `li-${e.id}-${n.replace(/[^a-z0-9]/gi,'_')}-${f}`;
         const inp = (f, type, placeholder, val) =>
           `<input type="${type}" id="${fid(f)}" value="${escHtml(val||'')}" placeholder="${placeholder}"
             style="width:100%;padding:5px 7px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:12px;font-family:inherit;box-sizing:border-box"
             onchange="onLogisticsFieldChange('${e.id}','${safeN}','${f}',this.value)">`;
-        const hasTransport = (logMap[n] || {}).transportation && (logMap[n] || {}).transportation.length > 0;
+        const dblOcc = acc.doubleOccupancy || false;
+        const hasRental = rental.enabled || false;
+        const ri = (f, type, placeholder, val) =>
+          `<input type="${type}" value="${escHtml(val||'')}" placeholder="${placeholder}"
+            style="width:100%;padding:4px 7px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:12px;font-family:inherit;box-sizing:border-box"
+            onchange="onRentalFieldChange('${e.id}','${safeN}','${f}',this.value)">`;
         return `<div style="background:var(--off-white);border:1px solid var(--gray-200);border-radius:var(--radius);padding:10px 12px;margin-bottom:8px">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-            <div style="font-weight:600;font-size:13px;color:var(--navy)">${escHtml(n)}</div>
-            <button class="btn btn-outline btn-sm" onclick="openTransportModal('${safeN}','${e.id}')">🚗 Transport${hasTransport?' ✓':''}</button>
-          </div>
+          <div style="font-weight:600;font-size:13px;color:var(--navy);margin-bottom:8px">${escHtml(n)}</div>
           <div style="display:grid;grid-template-columns:2fr 2fr 1fr 1fr 1fr;gap:6px;align-items:start">
             <div><div style="font-size:10px;color:var(--gray-400);margin-bottom:2px">HOTEL / PROPERTY</div>${inp('property','text','Hotel name',acc.property)}</div>
             <div><div style="font-size:10px;color:var(--gray-400);margin-bottom:2px">TOWN / CITY</div>${inp('town','text','Redding, CA',acc.town)}</div>
@@ -4237,6 +4282,34 @@ async function renderEmployeeManager() {
             <div><div style="font-size:10px;color:var(--gray-400);margin-bottom:2px">CONFIRM #</div>${inp('confirmation','text','ABC123',acc.confirmation)}</div>
           </div>
           <div style="margin-top:6px"><div style="font-size:10px;color:var(--gray-400);margin-bottom:2px">ADDRESS</div>${inp('address','text','Street address',acc.address)}</div>
+          <div style="margin-top:8px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;white-space:nowrap">
+              <input type="checkbox" ${dblOcc?'checked':''}
+                onchange="onLogisticsFieldChange('${e.id}','${safeN}','doubleOccupancy',this.checked);document.getElementById('roommate-${uid}').style.display=this.checked?'flex':'none'">
+              Double Occupancy
+            </label>
+            <div id="roommate-${uid}" style="display:${dblOcc?'flex':'none'};align-items:center;gap:6px;flex:1">
+              <span style="font-size:11px;color:var(--gray-500);white-space:nowrap">Roommate:</span>
+              <input type="text" value="${escHtml(acc.roommate||'')}" placeholder="Name"
+                style="flex:1;padding:4px 7px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:12px;font-family:inherit"
+                onchange="onLogisticsFieldChange('${e.id}','${safeN}','roommate',this.value)">
+            </div>
+          </div>
+          <div style="margin-top:8px;border-top:1px solid var(--gray-100);padding-top:8px">
+            <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;margin-bottom:${hasRental?'8px':'0'}">
+              <input type="checkbox" ${hasRental?'checked':''}
+                onchange="onRentalToggle('${e.id}','${safeN}',this.checked,'rental-${uid}')">
+              Rental Car
+            </label>
+            <div id="rental-${uid}" style="display:${hasRental?'grid':'none'};grid-template-columns:1fr 1fr;gap:6px">
+              <div><div style="font-size:10px;color:var(--gray-400);margin-bottom:2px">RENTAL COMPANY</div>${ri('company','text','Enterprise, Hertz…',rental.company)}</div>
+              <div><div style="font-size:10px;color:var(--gray-400);margin-bottom:2px">NOTES</div>${ri('notes','text','Optional',rental.notes)}</div>
+              <div><div style="font-size:10px;color:var(--gray-400);margin-bottom:2px">PICKUP LOCATION</div>${ri('pickupLocation','text','Airport, city…',rental.pickupLocation)}</div>
+              <div><div style="font-size:10px;color:var(--gray-400);margin-bottom:2px">PICKUP DATE</div>${ri('pickupDate','date','',rental.pickupDate)}</div>
+              <div><div style="font-size:10px;color:var(--gray-400);margin-bottom:2px">RETURN LOCATION</div>${ri('returnLocation','text','Airport, city…',rental.returnLocation)}</div>
+              <div><div style="font-size:10px;color:var(--gray-400);margin-bottom:2px">RETURN DATE</div>${ri('returnDate','date','',rental.returnDate)}</div>
+            </div>
+          </div>
         </div>`;
       }).join('')}
     </div>`;
@@ -5762,16 +5835,19 @@ function openRosterEntry(id) {
     document.getElementById('roster-entry-name').value = p.name || '';
     document.getElementById('roster-entry-status').value = p.status || 'available';
     document.getElementById('roster-entry-location').value = p.location || '';
-    document.getElementById('roster-entry-location-date').value = p.locationAsOf || '';
+    document.getElementById('roster-entry-location-date').value = p.availableAsOf || p.locationAsOf || '';
     document.getElementById('roster-entry-phone').value = p.phone || '';
     document.getElementById('roster-entry-notes').value = p.notes || '';
+    _blackoutEntries = JSON.parse(JSON.stringify(p.blackoutDates || []));
     if (del) del.style.display = '';
   } else {
     document.getElementById('roster-entry-title').textContent = 'Add Employee';
     ['roster-entry-name','roster-entry-location','roster-entry-location-date','roster-entry-phone','roster-entry-notes'].forEach(k => { const el = document.getElementById(k); if (el) el.value = ''; });
     document.getElementById('roster-entry-status').value = 'available';
+    _blackoutEntries = [];
     if (del) del.style.display = 'none';
   }
+  renderBlackoutRows();
   document.getElementById('roster-entry-modal').style.display = 'flex';
 }
 
@@ -5780,13 +5856,22 @@ function closeRosterEntry() { document.getElementById('roster-entry-modal').styl
 async function saveRosterEntry() {
   const name = document.getElementById('roster-entry-name').value.trim();
   if (!name) { alert('Name is required.'); return; }
+  _blackoutEntries.forEach(b => {
+    const s = document.getElementById('bd-start-' + b.id);
+    const e2 = document.getElementById('bd-end-' + b.id);
+    const noteEl = document.getElementById('bd-note-' + b.id);
+    if (s) b.start = s.value;
+    if (e2) b.end = e2.value;
+    if (noteEl) b.note = noteEl.value;
+  });
   const data = {
     name,
     status: document.getElementById('roster-entry-status').value,
     location: document.getElementById('roster-entry-location').value.trim(),
-    locationAsOf: document.getElementById('roster-entry-location-date').value,
+    availableAsOf: document.getElementById('roster-entry-location-date').value,
     phone: document.getElementById('roster-entry-phone').value.trim(),
     notes: document.getElementById('roster-entry-notes').value.trim(),
+    blackoutDates: _blackoutEntries.filter(b => b.start || b.end),
   };
   if (_editingRosterId) {
     const idx = _rosterCache.findIndex(x => x.id === _editingRosterId);
@@ -5816,6 +5901,61 @@ function updateRosterInline(id, field, value) {
   saveRoster();
 }
 
+async function autoPopulateRosterFromFires() {
+  const rosterNames = new Set(_rosterCache.map(p => p.name.toLowerCase()));
+  const newEntries = [];
+  state._incidents.forEach(e => {
+    if (!e.incident) return;
+    const primary = (e.incident.staffNames || []).filter(Boolean);
+    const additional = e.incident.addStaff ? (e.incident.additionalStaff || []).map(s => s.name).filter(Boolean) : [];
+    [...primary, ...additional].forEach(name => {
+      const lc = name.toLowerCase();
+      if (!rosterNames.has(lc)) {
+        rosterNames.add(lc);
+        newEntries.push({ id: 'r_' + Date.now() + '_' + Math.random().toString(36).slice(2,5), name, status: 'available', location: '', availableAsOf: '', phone: '', notes: '', blackoutDates: [] });
+      }
+    });
+  });
+  if (newEntries.length) {
+    _rosterCache = [..._rosterCache, ...newEntries];
+    await saveRoster();
+  }
+}
+
+var _blackoutEntries = [];
+
+function addBlackoutRow() {
+  _blackoutEntries.push({ id: 'bd_' + Date.now() + '_' + Math.random().toString(36).slice(2,5), start: '', end: '', note: '' });
+  renderBlackoutRows();
+}
+
+function removeBlackoutRow(id) {
+  _blackoutEntries = _blackoutEntries.filter(b => b.id !== id);
+  renderBlackoutRows();
+}
+
+function renderBlackoutRows() {
+  const el = document.getElementById('blackout-rows');
+  if (!el) return;
+  if (!_blackoutEntries.length) {
+    el.innerHTML = '<div style="font-size:12px;color:var(--gray-400);font-style:italic">No blackout dates added.</div>';
+    return;
+  }
+  el.innerHTML = _blackoutEntries.map(b => `
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap">
+      <input type="date" id="bd-start-${b.id}" value="${escHtml(b.start||'')}"
+        style="padding:4px 7px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:12px;font-family:inherit">
+      <span style="font-size:12px;color:var(--gray-500)">to</span>
+      <input type="date" id="bd-end-${b.id}" value="${escHtml(b.end||'')}"
+        style="padding:4px 7px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:12px;font-family:inherit">
+      <input type="text" id="bd-note-${b.id}" value="${escHtml(b.note||'')}" placeholder="Note (optional)"
+        style="flex:1;min-width:100px;padding:4px 7px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:12px;font-family:inherit">
+      <button type="button" onclick="removeBlackoutRow('${b.id}')"
+        style="background:none;border:none;color:#ef4444;font-size:16px;cursor:pointer;padding:0 4px;line-height:1">✕</button>
+    </div>
+  `).join('');
+}
+
 // ══════════ INCIDENT LOGISTICS ══════════
 var _transportEntries = [];
 var _logisticsStaffName = null;
@@ -5837,8 +5977,18 @@ function openLogisticsModal(staffName, incidentId) {
   document.getElementById('log-checkout').value = acc.checkOut || '';
   document.getElementById('log-hotel-confirm').value = acc.confirmation || '';
   document.getElementById('log-hotel-notes').value = acc.notes || '';
-  _transportEntries = JSON.parse(JSON.stringify(data.transportation || []));
-  renderTransportEntries();
+  document.getElementById('log-double-occ').checked = acc.doubleOccupancy || false;
+  document.getElementById('log-roommate-row').style.display = acc.doubleOccupancy ? 'flex' : 'none';
+  document.getElementById('log-roommate').value = acc.roommate || '';
+  const rental = data.rental || {};
+  document.getElementById('log-rental').checked = rental.enabled || false;
+  document.getElementById('log-rental-fields').style.display = rental.enabled ? 'block' : 'none';
+  document.getElementById('log-rental-company').value = rental.company || '';
+  document.getElementById('log-rental-notes').value = rental.notes || '';
+  document.getElementById('log-rental-pickup-loc').value = rental.pickupLocation || '';
+  document.getElementById('log-rental-pickup-date').value = rental.pickupDate || '';
+  document.getElementById('log-rental-return-loc').value = rental.returnLocation || '';
+  document.getElementById('log-rental-return-date').value = rental.returnDate || '';
   document.getElementById('log-accommodations-section').style.display = '';
   document.getElementById('incident-logistics-modal').style.display = 'flex';
 }
@@ -5854,16 +6004,38 @@ function onLogisticsFieldChange(incidentId, staffName, field, value) {
   const entry = state._incidents.find(i => i.id === incidentId);
   if (!entry) return;
   if (!entry.incident.employeeLogistics) entry.incident.employeeLogistics = {};
-  if (!entry.incident.employeeLogistics[staffName]) entry.incident.employeeLogistics[staffName] = { accommodations: {}, transportation: [] };
+  if (!entry.incident.employeeLogistics[staffName]) entry.incident.employeeLogistics[staffName] = { accommodations: {}, rental: {} };
   entry.incident.employeeLogistics[staffName].accommodations[field] = value;
+  saveState();
+}
+
+function onRentalToggle(incidentId, staffName, checked, divId) {
+  const entry = state._incidents.find(i => i.id === incidentId);
+  if (!entry) return;
+  if (!entry.incident.employeeLogistics) entry.incident.employeeLogistics = {};
+  if (!entry.incident.employeeLogistics[staffName]) entry.incident.employeeLogistics[staffName] = { accommodations: {}, rental: {} };
+  if (!entry.incident.employeeLogistics[staffName].rental) entry.incident.employeeLogistics[staffName].rental = {};
+  entry.incident.employeeLogistics[staffName].rental.enabled = checked;
+  saveState();
+  const div = document.getElementById(divId);
+  if (div) { div.style.display = checked ? 'grid' : 'none'; div.style.gridTemplateColumns = '1fr 1fr'; }
+}
+
+function onRentalFieldChange(incidentId, staffName, field, value) {
+  const entry = state._incidents.find(i => i.id === incidentId);
+  if (!entry) return;
+  if (!entry.incident.employeeLogistics) entry.incident.employeeLogistics = {};
+  if (!entry.incident.employeeLogistics[staffName]) entry.incident.employeeLogistics[staffName] = { accommodations: {}, rental: {} };
+  if (!entry.incident.employeeLogistics[staffName].rental) entry.incident.employeeLogistics[staffName].rental = {};
+  entry.incident.employeeLogistics[staffName].rental[field] = value;
   saveState();
 }
 
 function saveLogistics() {
   const entry = state._incidents.find(i => i.id === _logisticsIncidentId);
   if (!entry || !_logisticsStaffName) return;
-  syncTransportFromDom();
   if (!entry.incident.employeeLogistics) entry.incident.employeeLogistics = {};
+  const rentalEnabled = document.getElementById('log-rental').checked;
   entry.incident.employeeLogistics[_logisticsStaffName] = {
     accommodations: {
       property: document.getElementById('log-property').value.trim(),
@@ -5873,8 +6045,18 @@ function saveLogistics() {
       checkOut: document.getElementById('log-checkout').value,
       confirmation: document.getElementById('log-hotel-confirm').value.trim(),
       notes: document.getElementById('log-hotel-notes').value.trim(),
+      doubleOccupancy: document.getElementById('log-double-occ').checked,
+      roommate: document.getElementById('log-roommate').value.trim(),
     },
-    transportation: _transportEntries,
+    rental: {
+      enabled: rentalEnabled,
+      company: document.getElementById('log-rental-company').value.trim(),
+      notes: document.getElementById('log-rental-notes').value.trim(),
+      pickupLocation: document.getElementById('log-rental-pickup-loc').value.trim(),
+      pickupDate: document.getElementById('log-rental-pickup-date').value,
+      returnLocation: document.getElementById('log-rental-return-loc').value.trim(),
+      returnDate: document.getElementById('log-rental-return-date').value,
+    },
   };
   saveState();
   closeLogisticsModal();
