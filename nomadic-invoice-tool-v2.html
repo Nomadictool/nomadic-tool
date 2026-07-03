@@ -4129,11 +4129,34 @@ let _employeeManagerCache = []; // last-fetched employee list, so action handler
 async function renderEmployeeManager() {
   const body = document.getElementById('employee-manager-body');
   body.innerHTML = '<div style="color:var(--gray-400);font-size:13px">Loading…</div>';
+
+  // ── Active fire staff (from incident state, always shown) ──
+  const fireStaffHtml = (() => {
+    const fires = state._incidents.filter(e => e.incident);
+    if (!fires.length) return '';
+    const rows = fires.map(e => {
+      const inc = e.incident;
+      const primary = (inc.staffNames || []).filter(Boolean);
+      const additional = inc.addStaff ? (inc.additionalStaff || []).map(s => s.name).filter(Boolean) : [];
+      const all = [...primary, ...additional];
+      if (!all.length) return '';
+      return `<div style="margin-bottom:10px">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--gray-400);margin-bottom:4px">${escHtml(inc.name || 'Unnamed Fire')}</div>
+        ${all.map(n => `<div style="font-size:13px;color:var(--navy);padding:3px 0">${escHtml(n)}</div>`).join('')}
+      </div>`;
+    }).filter(Boolean).join('');
+    if (!rows) return '';
+    return `<div style="margin-bottom:20px">
+      <div class="section-label" style="margin-bottom:10px">Staff on Active Fires</div>
+      ${rows}
+    </div>`;
+  })();
+
   const { data: employees, error } = await _sb.from('employees').select('id,name,role,active').order('name');
-  if (error) { body.innerHTML = '<div style="color:#ef4444;font-size:13px">Could not load employees.</div>'; return; }
+  if (error) { body.innerHTML = fireStaffHtml + '<div style="color:#ef4444;font-size:13px">Could not load PIN system employees.</div>'; return; }
   _employeeManagerCache = employees || [];
   if (!employees || employees.length === 0) {
-    body.innerHTML = '<div class="empty-state"><div class="empty-icon">👥</div><p>No employees yet.</p></div>';
+    body.innerHTML = fireStaffHtml + (fireStaffHtml ? '' : '<div class="empty-state"><div class="empty-icon">👥</div><p>No employees yet.</p></div>');
     return;
   }
   // Fetch assignment counts in one query and tally client-side (small dataset, simplest correct approach)
@@ -4141,7 +4164,7 @@ async function renderEmployeeManager() {
   const countByEmployee = {};
   (assignments || []).forEach(a => { countByEmployee[a.employee_id] = (countByEmployee[a.employee_id] || 0) + 1; });
 
-  body.innerHTML = employees.map(e => {
+  body.innerHTML = fireStaffHtml + (fireStaffHtml ? `<div class="section-label" style="margin-bottom:10px">PIN System Employees</div>` : '') + employees.map(e => {
     const p = _employeeProfiles[e.id] || {};
     const locationText = p.location ? `📍 ${escHtml(p.location)}${p.locationAsOf ? ' · ' + p.locationAsOf : ''}` : '';
     const availText = p.availability ? escHtml(p.availability) : '';
