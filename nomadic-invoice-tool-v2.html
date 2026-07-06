@@ -1316,6 +1316,7 @@ body {
       <h1 style="font-family:'Barlow Condensed',sans-serif;font-size:26px;font-weight:700;letter-spacing:0.5px">Review Expense Reports</h1>
       <p class="text-sm text-muted mt-8">Submitted reports waiting for approval, across all employees.</p>
     </div>
+    <div id="expense-review-controls" style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap"></div>
     <div id="expense-review-list"><!-- rendered by JS --></div>
   </div>
 
@@ -4774,6 +4775,19 @@ async function submitExpenseReport() {
 }
 
 // ── Admin review ──
+let _expenseReviewReports = [];
+let _expenseReviewFilter = '';
+
+function getExpensePeriods(reports) {
+  const seen = new Set();
+  const periods = [];
+  reports.forEach(r => {
+    const key = r.pay_period_start + '|' + r.pay_period_end;
+    if (!seen.has(key)) { seen.add(key); periods.push(key); }
+  });
+  return periods.sort((a, b) => b.split('|')[0].localeCompare(a.split('|')[0]));
+}
+
 async function loadExpenseReviewList() {
   if (!state.isAdmin) return;
   const { data: reports, error } = await _sb.from('expense_reports')
@@ -4781,60 +4795,161 @@ async function loadExpenseReviewList() {
     .in('status', ['submitted', 'approved', 'rejected'])
     .order('submitted_at', { ascending: false });
   if (error) { console.error('[Nomadic] Could not load review list:', error); return; }
-  renderExpenseReviewList(reports || []);
+  _expenseReviewReports = reports || [];
+  const periods = getExpensePeriods(_expenseReviewReports);
+  if (periods.length && (!_expenseReviewFilter || !periods.includes(_expenseReviewFilter))) {
+    _expenseReviewFilter = periods[0];
+  }
+  renderExpenseReviewControls();
+  renderExpenseReviewList();
 }
 
-function renderExpenseReviewList(reports) {
+function renderExpenseReviewControls() {
+  const el = document.getElementById('expense-review-controls');
+  if (!el) return;
+  const periods = getExpensePeriods(_expenseReviewReports);
+  if (!periods.length) { el.innerHTML = ''; return; }
+  const options = periods.map(p => {
+    const [s, e] = p.split('|');
+    return `<option value="${p}" ${p === _expenseReviewFilter ? 'selected' : ''}>${formatDate(s)} – ${formatDate(e)}</option>`;
+  }).join('');
+  el.innerHTML = `
+    <label style="font-size:13px;font-weight:600;color:var(--navy)">Pay Period:</label>
+    <select onchange="filterExpenseReview(this.value)" style="font-size:13px;padding:5px 10px;border:1px solid var(--gray-300);border-radius:6px">${options}</select>
+    <button class="btn btn-outline btn-sm" onclick="exportExpensePDF()" style="margin-left:auto">📄 Export Approved PDF</button>`;
+}
+
+function filterExpenseReview(value) {
+  _expenseReviewFilter = value;
+  renderExpenseReviewList();
+}
+
+function renderExpenseReviewList() {
   const container = document.getElementById('expense-review-list');
   if (!container) return;
+  const [fs, fe] = _expenseReviewFilter ? _expenseReviewFilter.split('|') : [null, null];
+  const reports = fs
+    ? _expenseReviewReports.filter(r => r.pay_period_start === fs && r.pay_period_end === fe)
+    : _expenseReviewReports;
   if (!reports.length) {
     container.innerHTML = '<div class="empty-state"><div class="empty-icon">✅</div><p>Nothing submitted yet.</p></div>';
     return;
   }
   const statusColors = { submitted: '#f5a623', approved: '#2d7a4f', rejected: '#c0392b' };
-  container.innerHTML = reports.map(r => `
-    <div class="card" style="margin-bottom:10px;padding:14px 18px;display:flex;align-items:center;justify-content:space-between;cursor:pointer" onclick="openExpenseReport('${r.id}')">
-      <div>
-        <div style="font-weight:600;font-size:14px;color:var(--navy)">${escHtml(r.employees?.name || 'Unknown')} · ${formatDate(r.pay_period_start)} – ${formatDate(r.pay_period_end)}</div>
-        <div style="font-size:12px;color:var(--gray-500)">${r.expense_line_items?.[0]?.count || 0} items · Submitted ${r.submitted_at ? formatDate(r.submitted_at.slice(0, 10)) : '—'}</div>
-      </div>
-      <span style="font-size:11px;font-weight:700;text-transform:uppercase;padding:3px 10px;border-radius:10px;color:#fff;background:${statusColors[r.status] || '#9A9690'}">${r.status}</span>
-    </div>
-  `).join('');
+  container.innerHTML = reports.map(r => {
+    const actionBtns = r.status === 'submitted' ? `
+      <div style="display:flex;gap:6px" onclick="event.stopPropagation()">
+        <button class="btn btn-outline btn-sm" onclick="quickRejectReport('${r.id}')" style="color:#ef4444;border-color:#fca5a5">Reject</button>
+        <button class="btn btn-primary btn-sm" onclick="quickApproveReport('${r.id}')">Approve</button>
+      </div>` : '';
+    return `
+      <div class="card" style="margin-bottom:10px;padding:14px 18px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;gap:12px" onclick="openExpenseReport('${r.id}')">
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:600;font-size:14px;color:var(--navy)">${escHtml(r.employees?.name || 'Unknown')} · ${formatDate(r.pay_period_start)} – ${formatDate(r.pay_period_end)}</div>
+          <div style="font-size:12px;color:var(--gray-500)">${r.expense_line_items?.[0]?.count || 0} items · Submitted ${r.submitted_at ? formatDate(r.submitted_at.slice(0, 10)) : '—'}</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;flex-shrink:0">
+          ${actionBtns}
+          <span style="font-size:11px;font-weight:700;text-transform:uppercase;padding:3px 10px;border-radius:10px;color:#fff;background:${statusColors[r.status] || '#9A9690'}">${r.status}</span>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+async function quickApproveReport(id) {
+  if (!confirm('Approve this expense report?')) return;
+  const { error } = await _sb.from('expense_reports').update({ status: 'approved' }).eq('id', id);
+  if (error) { alert('Could not approve: ' + error.message); return; }
+  _expenseReviewReports = _expenseReviewReports.map(r => r.id === id ? { ...r, status: 'approved' } : r);
+  renderExpenseReviewList();
+}
+
+async function quickRejectReport(id) {
+  const note = prompt('Optional note explaining why this is being returned (the employee will see this):') || '';
+  const { error } = await _sb.from('expense_reports').update({ status: 'rejected', notes: note }).eq('id', id);
+  if (error) { alert('Could not reject: ' + error.message); return; }
+  _expenseReviewReports = _expenseReviewReports.map(r => r.id === id ? { ...r, status: 'rejected', notes: note } : r);
+  renderExpenseReviewList();
 }
 
 async function approveExpenseReport() {
-  const { report, items } = _activeExpenseReport;
+  const { report } = _activeExpenseReport;
   const { error } = await _sb.from('expense_reports').update({ status: 'approved' }).eq('id', report.id);
   if (error) { alert('Could not approve: ' + error.message); return; }
   closeExpenseReport();
   await loadExpenseReviewList();
-  openHrEmailDraft(report, items);
 }
 
 async function rejectExpenseReport() {
-  const note = prompt("Optional note explaining why this is being returned (the employee will see this):") || '';
+  const note = prompt('Optional note explaining why this is being returned (the employee will see this):') || '';
   const { error } = await _sb.from('expense_reports').update({ status: 'rejected', notes: note }).eq('id', _activeExpenseReport.report.id);
   if (error) { alert('Could not reject: ' + error.message); return; }
   closeExpenseReport();
   await loadExpenseReviewList();
 }
 
-async function openHrEmailDraft(report, items) {
-  const { data: empRows } = await _sb.from('employees').select('name').eq('id', report.employee_id);
-  const empName = empRows?.[0]?.name || 'Employee';
-  const { data: cfg } = await _sb.from('app_config').select('value').eq('key', 'hr_email').maybeSingle();
-  const hrEmail = cfg?.value?.address || '';
-  let body = `Approved\n\nEmployee: ${empName}\nPay Period: ${formatDate(report.pay_period_start)} - ${formatDate(report.pay_period_end)}\n\n`;
-  items.forEach(it => {
-    const desc = it.description || ((it.start_address || '') + ' to ' + (it.finish_address || ''));
-    body += `${formatDate(it.date)} | ${EXPENSE_CATEGORY_LABELS[it.category] || it.category} | ${desc} | $${(it.amount || 0).toFixed(2)}\n`;
+async function exportExpensePDF() {
+  if (!_expenseReviewFilter) { alert('Select a pay period first.'); return; }
+  const [start, end] = _expenseReviewFilter.split('|');
+  const approved = _expenseReviewReports.filter(r => r.pay_period_start === start && r.pay_period_end === end && r.status === 'approved');
+  if (!approved.length) { alert('No approved reports for this pay period. Approve reports first, then export.'); return; }
+  const { data: allItems } = await _sb.from('expense_line_items').select('*').in('expense_report_id', approved.map(r => r.id)).order('expense_report_id, date');
+  const byReport = {};
+  (allItems || []).forEach(it => {
+    if (!byReport[it.expense_report_id]) byReport[it.expense_report_id] = [];
+    byReport[it.expense_report_id].push(it);
   });
-  const total = items.reduce((s, it) => s + (it.amount || 0), 0);
-  body += `\nTotal: $${total.toFixed(2)}`;
-  const subject = `Approved Expense Report — ${empName} — ${formatDate(report.pay_period_start)} to ${formatDate(report.pay_period_end)}`;
-  const mailto = `mailto:${encodeURIComponent(hrEmail)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-  window.open(mailto, '_blank');
+  const win = window.open('', '_blank');
+  win.document.write(buildExpensePDFHtml(approved, byReport, start, end));
+  win.document.close();
+  win.focus();
+}
+
+function buildExpensePDFHtml(reports, byReport, start, end) {
+  const grandTotal = reports.reduce((s, r) => s + (byReport[r.id] || []).reduce((rs, it) => rs + (it.amount || 0), 0), 0);
+  const sections = reports.map(r => {
+    const items = byReport[r.id] || [];
+    const total = items.reduce((s, it) => s + (it.amount || 0), 0);
+    const rows = items.map(it => {
+      const desc = it.description || (it.start_address ? `${it.start_address} → ${it.finish_address}` : '');
+      return `<tr>
+        <td>${it.date || ''}</td>
+        <td>${EXPENSE_CATEGORY_LABELS[it.category] || it.category}</td>
+        <td>${escHtml(desc || '—')}</td>
+        <td class="money">$${(it.amount || 0).toFixed(2)}</td>
+      </tr>`;
+    }).join('');
+    return `<div class="report-block">
+      <div class="report-header">${escHtml(r.employees?.name || 'Unknown')}</div>
+      <table>
+        <thead><tr><th>Date</th><th>Category</th><th>Description</th><th class="money">Amount</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="4" style="text-align:center;color:#999">No items</td></tr>'}</tbody>
+        <tfoot><tr class="subtotal"><td colspan="3" style="text-align:right">Subtotal</td><td class="money">$${total.toFixed(2)}</td></tr></tfoot>
+      </table>
+    </div>`;
+  }).join('');
+  return `<!DOCTYPE html><html><head><meta charset="utf-8">
+<title>Expense Reports — ${formatDate(start)} to ${formatDate(end)}</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Arial,sans-serif;font-size:12px;color:#222;padding:28px 32px}
+h1{font-size:20px;color:#1a3a6b;margin-bottom:6px}
+.meta{color:#555;font-size:12px;margin-bottom:28px}
+.report-block{margin-bottom:28px;page-break-inside:avoid}
+.report-header{background:#1a3a6b;color:#fff;padding:7px 12px;font-size:13px;font-weight:700}
+table{width:100%;border-collapse:collapse}
+th{background:#e8edf4;padding:5px 10px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.4px;border-bottom:1px solid #c5d0e0}
+td{padding:6px 10px;border-bottom:1px solid #eee}
+.money{text-align:right}
+.subtotal td{font-weight:700;background:#f5f5f5}
+.grand-total{margin-top:24px;padding:11px 12px;background:#1a3a6b;color:#fff;text-align:right;font-size:14px;font-weight:700}
+@media print{body{padding:0} @page{margin:18mm}}
+</style></head><body>
+<h1>Approved Expense Reports</h1>
+<p class="meta">Pay Period: ${formatDate(start)} – ${formatDate(end)} &nbsp;·&nbsp; ${reports.length} employee${reports.length !== 1 ? 's' : ''} &nbsp;·&nbsp; Exported ${new Date().toLocaleDateString()}</p>
+${sections}
+<div class="grand-total">Grand Total: $${grandTotal.toFixed(2)}</div>
+</body></html>`;
 }
 
 // SEASON OVERVIEW
