@@ -4669,9 +4669,9 @@ function renderExpenseReportModal() {
   document.getElementById('expense-report-total').textContent = 'Total: $' + total.toFixed(2);
 
   const rejectNote = document.getElementById('expense-report-reject-note');
-  if (report.status === 'rejected' && report.notes) {
+  if (report.notes) {
     rejectNote.style.display = 'block';
-    rejectNote.textContent = 'Returned by admin: ' + report.notes;
+    rejectNote.textContent = '⚠ Returned for revision — ' + report.notes;
   } else {
     rejectNote.style.display = 'none';
   }
@@ -4777,7 +4777,7 @@ async function updateLineItemReceiptUrl(id, url) {
 async function submitExpenseReport() {
   if (!confirm('Submit this expense report? Amounts can no longer be changed after this.')) return;
   const { report, items } = _activeExpenseReport;
-  const { error } = await _sb.from('expense_reports').update({ status: 'submitted', submitted_at: new Date().toISOString() }).eq('id', report.id);
+  const { error } = await _sb.from('expense_reports').update({ status: 'submitted', submitted_at: new Date().toISOString(), notes: null }).eq('id', report.id);
   if (error) { alert('Could not submit: ' + error.message); return; }
   const incEntry = state._incidents.find(e => e.id === report.incident_id);
   fetch('/.netlify/functions/send-email', {
@@ -4888,10 +4888,10 @@ async function quickApproveReport(id) {
 }
 
 async function quickRejectReport(id) {
-  const note = prompt('Optional note explaining why this is being returned (the employee will see this):') || '';
-  const { error } = await _sb.from('expense_reports').update({ status: 'rejected', notes: note }).eq('id', id);
-  if (error) { alert('Could not reject: ' + error.message); return; }
-  _expenseReviewReports = _expenseReviewReports.map(r => r.id === id ? { ...r, status: 'rejected', notes: note } : r);
+  const note = prompt('What needs to be changed? (The employee will see this message before revising and resubmitting.)') || '';
+  const { error } = await _sb.from('expense_reports').update({ status: 'draft', notes: note || null }).eq('id', id);
+  if (error) { alert('Could not return report: ' + error.message); return; }
+  _expenseReviewReports = _expenseReviewReports.filter(r => r.id !== id);
   renderExpenseReviewList();
 }
 
@@ -4904,9 +4904,9 @@ async function approveExpenseReport() {
 }
 
 async function rejectExpenseReport() {
-  const note = prompt('Optional note explaining why this is being returned (the employee will see this):') || '';
-  const { error } = await _sb.from('expense_reports').update({ status: 'rejected', notes: note }).eq('id', _activeExpenseReport.report.id);
-  if (error) { alert('Could not reject: ' + error.message); return; }
+  const note = prompt('What needs to be changed? (The employee will see this message before revising and resubmitting.)') || '';
+  const { error } = await _sb.from('expense_reports').update({ status: 'draft', notes: note || null }).eq('id', _activeExpenseReport.report.id);
+  if (error) { alert('Could not return report: ' + error.message); return; }
   closeExpenseReport();
   await loadExpenseReviewList();
 }
