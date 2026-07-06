@@ -1747,11 +1747,14 @@ body {
         <div id="qa-mileage-amount-display" style="display:none;font-size:12px;color:var(--gray-600);min-width:90px;padding-bottom:8px">= $0.00</div>
         <button class="btn btn-primary btn-sm" onclick="quickAddExpenseItem()">+ Add</button>
         <div id="qa-error" style="color:#ef4444;font-size:12px;width:100%"></div>
+        <div id="qa-receipt-wrap" style="width:100%;margin-top:2px">
+          <input type="url" id="qa-receipt-url" placeholder="📎 Receipt link — Google Drive, Dropbox, etc. (optional)" style="font-size:12px;padding:5px 8px;width:100%;border:1px solid var(--gray-300);border-radius:6px;color:var(--gray-700)">
+        </div>
       </div>
 
       <table class="orders-table" id="expense-line-items-table" style="display:none">
         <thead>
-          <tr><th>Date</th><th>Category</th><th>Description</th><th>Amount</th><th></th></tr>
+          <tr><th>Date</th><th>Category</th><th>Description</th><th>Amount</th><th>Receipt</th><th></th></tr>
         </thead>
         <tbody id="expense-line-items-tbody"></tbody>
       </table>
@@ -4642,15 +4645,25 @@ function renderExpenseReportModal() {
     table.style.display = 'none'; empty.style.display = 'block';
   } else {
     table.style.display = 'table'; empty.style.display = 'none';
-    tbody.innerHTML = items.map(it => `
-      <tr>
+    tbody.innerHTML = items.map(it => {
+      const isMileage = it.category === 'mileage';
+      let receiptCell;
+      if (isMileage) {
+        receiptCell = '<span style="color:var(--gray-400);font-size:12px">—</span>';
+      } else if (isOwner) {
+        receiptCell = `<input type="url" value="${escHtml(it.receipt_url || '')}" placeholder="Paste link…" onchange="updateLineItemReceiptUrl('${it.id}', this.value)" style="font-size:11px;padding:3px 6px;border:1px solid var(--gray-300);border-radius:4px;width:160px;color:var(--gray-700)">`;
+      } else {
+        receiptCell = it.receipt_url ? `<a href="${escHtml(it.receipt_url)}" target="_blank" rel="noopener" style="font-size:12px">📎 View</a>` : '<span style="color:var(--gray-400);font-size:12px">—</span>';
+      }
+      return `<tr>
         <td class="text-sm text-mono">${formatDate(it.date)}</td>
         <td class="text-sm">${EXPENSE_CATEGORY_LABELS[it.category] || it.category}</td>
         <td class="text-sm">${escHtml(it.description || (it.category === 'mileage' ? (it.start_address || '') + ' → ' + (it.finish_address || '') : ''))}</td>
         <td class="money">$${(it.amount || 0).toFixed(2)}</td>
+        <td>${receiptCell}</td>
         <td>${isDraft && isOwner ? `<button class="btn btn-outline btn-sm" onclick="deleteExpenseLineItem('${it.id}')">Delete</button>` : ''}</td>
-      </tr>
-    `).join('');
+      </tr>`;
+    }).join('');
   }
   const total = items.reduce((s, it) => s + (it.amount || 0), 0);
   document.getElementById('expense-report-total').textContent = 'Total: $' + total.toFixed(2);
@@ -4694,6 +4707,7 @@ function clearQuickAddContentFields() {
   document.getElementById('qa-start-address').value = '';
   document.getElementById('qa-finish-address').value = '';
   document.getElementById('qa-miles').value = '';
+  document.getElementById('qa-receipt-url').value = '';
   document.getElementById('qa-mileage-amount-display').textContent = '= $0.00';
   document.getElementById('qa-error').textContent = '';
 }
@@ -4703,6 +4717,7 @@ function onQuickAddCategoryChange() {
   document.getElementById('qa-mileage-fields').style.display = isMileage ? 'flex' : 'none';
   document.getElementById('qa-amount-wrap').style.display = isMileage ? 'none' : 'block';
   document.getElementById('qa-mileage-amount-display').style.display = isMileage ? 'block' : 'none';
+  document.getElementById('qa-receipt-wrap').style.display = isMileage ? 'none' : 'block';
 }
 function updateQuickAddMileageAmount() {
   const miles = parseFloat(document.getElementById('qa-miles').value) || 0;
@@ -4731,9 +4746,9 @@ async function quickAddExpenseItem() {
     if (!amount) { errEl.textContent = 'Enter an amount.'; return; }
     payload.description = document.getElementById('qa-description').value.trim();
     payload.amount = amount;
-    // No receipt-attach mechanism exists yet (that's Phase 3) — every non-mileage
-    // item honestly starts as "pending" since nothing can be collected yet.
-    payload.receipt_status = 'pending';
+    const receiptUrl = document.getElementById('qa-receipt-url').value.trim();
+    payload.receipt_url = receiptUrl || null;
+    payload.receipt_status = receiptUrl ? 'attached' : 'pending';
   }
   const { error } = await _sb.from('expense_line_items').insert(payload);
   if (error) { errEl.textContent = error.message; return; }
@@ -4749,6 +4764,14 @@ async function deleteExpenseLineItem(id) {
   await _sb.from('expense_line_items').delete().eq('id', id);
   await refreshActiveExpenseItems();
   await loadMyExpenseReports();
+}
+
+async function updateLineItemReceiptUrl(id, url) {
+  const trimmed = url.trim();
+  await _sb.from('expense_line_items').update({
+    receipt_url: trimmed || null,
+    receipt_status: trimmed ? 'attached' : 'pending',
+  }).eq('id', id);
 }
 
 async function submitExpenseReport() {
@@ -4912,19 +4935,21 @@ function buildExpensePDFHtml(reports, byReport, start, end) {
     const total = items.reduce((s, it) => s + (it.amount || 0), 0);
     const rows = items.map(it => {
       const desc = it.description || (it.start_address ? `${it.start_address} → ${it.finish_address}` : '');
+      const receiptCell = it.category === 'mileage' ? '—' : (it.receipt_url ? `<a href="${escHtml(it.receipt_url)}">${escHtml(it.receipt_url)}</a>` : '<span style="color:#999">Pending</span>');
       return `<tr>
         <td>${it.date || ''}</td>
         <td>${EXPENSE_CATEGORY_LABELS[it.category] || it.category}</td>
         <td>${escHtml(desc || '—')}</td>
         <td class="money">$${(it.amount || 0).toFixed(2)}</td>
+        <td class="receipt-cell">${receiptCell}</td>
       </tr>`;
     }).join('');
     return `<div class="report-block">
       <div class="report-header">${escHtml(r.employees?.name || 'Unknown')}</div>
       <table>
-        <thead><tr><th>Date</th><th>Category</th><th>Description</th><th class="money">Amount</th></tr></thead>
-        <tbody>${rows || '<tr><td colspan="4" style="text-align:center;color:#999">No items</td></tr>'}</tbody>
-        <tfoot><tr class="subtotal"><td colspan="3" style="text-align:right">Subtotal</td><td class="money">$${total.toFixed(2)}</td></tr></tfoot>
+        <thead><tr><th>Date</th><th>Category</th><th>Description</th><th class="money">Amount</th><th>Receipt</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="5" style="text-align:center;color:#999">No items</td></tr>'}</tbody>
+        <tfoot><tr class="subtotal"><td colspan="3" style="text-align:right">Subtotal</td><td class="money">$${total.toFixed(2)}</td><td></td></tr></tfoot>
       </table>
     </div>`;
   }).join('');
