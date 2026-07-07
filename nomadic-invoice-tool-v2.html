@@ -862,12 +862,10 @@ body {
   <button class="nav-btn" onclick="showScreen('expenses')" id="nav-expenses">💵 Expenses</button>
   <button class="nav-btn" onclick="showScreen('expense-review')" id="nav-expense-review" style="display:none">✅ Review Expenses</button>
   <button class="nav-btn" onclick="showScreen('help')" id="nav-help">❓ Help</button>
-  <button class="nav-btn" onclick="showAdminLogin()" id="nav-admin-login">🔐 Admin</button>
   <button class="nav-btn" onclick="showScreen('admin')" id="nav-rates" style="display:none">⚙ Rates</button>
   <button class="nav-btn" onclick="showScreen('season')" id="nav-season" style="display:none">📊 Season</button>
   <button class="nav-btn" onclick="showScreen('summary')" id="nav-summary" style="display:none">📋 Summary</button>
   <button class="nav-btn" onclick="showScreen('fleet')" id="nav-fleet" style="display:none">🚛 Fleet</button>
-  <button class="nav-btn" onclick="lockAdmin()" id="nav-lock" style="display:none">🔒 Lock</button>
 </nav>
 
 <main class="app-main">
@@ -2020,7 +2018,6 @@ const state = {
   currentDate: todayStr(),
   editingOrderId: null,
   selectedPlotType: null,
-  adminUnlocked: false,
   get isAdmin() {
     return this._session?.employee?.role === 'admin';
   },
@@ -2508,12 +2505,11 @@ function onLoginSuccess() {
   const wrapEl = document.getElementById('logged-in-as-display');
   if (nameEl) nameEl.textContent = state._session?.employee?.name || '—';
   if (wrapEl) wrapEl.style.display = 'flex';
-  const empBtn = document.getElementById('manage-employees-btn');
-  if (empBtn) empBtn.style.display = state.isAdmin ? '' : 'none';
-  const rptBtn = document.getElementById('season-report-btn');
-  if (rptBtn) rptBtn.style.display = state.isAdmin ? '' : 'none';
-  const reviewBtn = document.getElementById('nav-expense-review');
-  if (reviewBtn) reviewBtn.style.display = state.isAdmin ? '' : 'none';
+  const adminIds = ['manage-employees-btn', 'season-report-btn', 'nav-expense-review', 'nav-rates', 'nav-season', 'nav-summary', 'nav-fleet', 'manage-incidents-btn', 'day-total-box'];
+  adminIds.forEach(elId => {
+    const el = document.getElementById(elId);
+    if (el) el.style.display = state.isAdmin ? '' : 'none';
+  });
   resetInactivityTimer();
   refreshLocalBackupDisplay();
   initAppAfterLogin();
@@ -3940,46 +3936,9 @@ function summarizeOrder(ord) {
 }
 
 // ══════════ ADMIN ══════════
-function showAdminLogin() {
-  const pw = prompt('Enter admin password:');
-  if (pw === null) return;
-  if (pw === 'admin4nomadic') {
-    state.adminUnlocked = true;
-    const el = id => document.getElementById(id);
-    if (el('nav-admin-login'))      el('nav-admin-login').style.display = 'none';
-    if (el('nav-rates'))            el('nav-rates').style.display = '';
-    if (el('nav-season'))           el('nav-season').style.display = '';
-    if (el('nav-summary'))          el('nav-summary').style.display = '';
-    if (el('nav-fleet'))            el('nav-fleet').style.display = '';
-    if (el('nav-lock'))             el('nav-lock').style.display = '';
-    if (el('manage-incidents-btn')) el('manage-incidents-btn').style.display = '';
-    if (el('day-total-box'))        el('day-total-box').style.display = '';
-    renderRatesAdmin();
-    updateDayTotalBox(document.getElementById('daily-date').value);
-    showScreen('admin');
-  } else {
-    alert('Incorrect password.');
-  }
-}
-
-function lockAdmin() {
-  state.adminUnlocked = false;
-  const el = id => document.getElementById(id);
-  if (el('nav-admin-login'))      el('nav-admin-login').style.display = '';
-  if (el('nav-rates'))            el('nav-rates').style.display = 'none';
-  if (el('nav-season'))           el('nav-season').style.display = 'none';
-  if (el('nav-summary'))          el('nav-summary').style.display = 'none';
-  if (el('nav-fleet'))            el('nav-fleet').style.display = 'none';
-  if (el('nav-lock'))             el('nav-lock').style.display = 'none';
-  if (el('manage-incidents-btn')) el('manage-incidents-btn').style.display = 'none';
-  if (el('logistics-btn'))        el('logistics-btn').style.display = 'none';
-  if (el('day-total-box'))        el('day-total-box').style.display = 'none';
-  const adminScreens = ['admin','season','summary','fleet'];
-  if (adminScreens.some(s => el('screen-'+s)?.classList.contains('active'))) showScreen('daily-log');
-}
 
 function renderRatesAdmin() {
-  if (!state.adminUnlocked) { showAdminLogin(); return; }
+  if (!state.isAdmin) return;
   const grid = document.getElementById('rates-admin-grid');
   const standardItems = [
     ['bw85','8.5×11 B&W (ea)'],['color85','8.5×11 Color (ea)'],['lam85','8.5×11 Laminate (ea)'],
@@ -4093,7 +4052,7 @@ function collectCustomItems() {
 
 // INCIDENT MANAGER
 function openIncidentManager() {
-  if (!state.adminUnlocked) return;
+  if (!state.isAdmin) return;
   renderIncidentManager();
   document.getElementById('incident-manager-modal').style.display = 'flex';
 }
@@ -5717,7 +5676,7 @@ function getUnitEffectiveStatus(unit) {
 }
 
 async function renderFleetScreen() {
-  if (!state.adminUnlocked) { showAdminLogin(); return; }
+  if (!state.isAdmin) return;
   if (_unitsCache.length === 0) await reloadUnits();
   const statsEl = document.getElementById('fleet-stats');
   const unitsEl = document.getElementById('fleet-units');
