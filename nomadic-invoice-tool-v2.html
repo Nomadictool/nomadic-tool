@@ -4326,7 +4326,7 @@ async function renderEmployeeManager() {
     inactive:    { label: 'Inactive',    bg: '#fee2e2', color: '#991b1b' },
     on_incident: { label: 'On Incident', bg: '#fef3c7', color: '#92400e' },
   };
-  const today = new Date().toISOString().split('T')[0];
+  const today = todayStr();
   const rosterRows = _rosterCache.map(p => {
     const fireName = getPersonActiveFire(p.name);
     const statusKey = fireName ? 'on_incident' : (p.status || 'available');
@@ -5812,7 +5812,7 @@ async function reloadUnits() {
 }
 
 function getUnitEffectiveStatus(unit) {
-  const activeEntry = state._incidents.find(e => e.incident && e.incident.unit === unit.name);
+  const activeEntry = state._incidents.find(e => e.incident && !e.archived && e.incident.unit === unit.name);
   if (activeEntry) return { key: 'incident', label: 'On Incident — ' + (activeEntry.incident.name || unit.name), cls: 'us-incident' };
   const map = {
     available:   { key: 'available',    label: 'Available',       cls: 'us-available' },
@@ -5836,7 +5836,7 @@ async function renderFleetScreen() {
   const trackedNames = new Set(units.map(u => u.name));
   const ghosts = [];
   state._incidents.forEach(e => {
-    const n = e.incident && e.incident.unit;
+    const n = e.incident && !e.archived && e.incident.unit;
     if (n && !trackedNames.has(n)) {
       ghosts.push({ name: n, ghost: true, effectiveStatus: { key: 'incident', label: 'On Incident — ' + (e.incident.name || n), cls: 'us-incident' } });
       trackedNames.add(n);
