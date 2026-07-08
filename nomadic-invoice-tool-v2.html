@@ -4472,6 +4472,13 @@ function getExpenseDeadline(periodEndStr) {
 
 const EXPENSE_CATEGORY_LABELS = { lodging: 'Lodging', mileage: 'Mileage', supplies: 'Supplies', per_diem_difference: 'Meals Per Diem', other: 'Other' };
 
+// Receipt links are pasted by employees and clicked by the admin — only allow
+// real web URLs so a javascript: link can't run in the admin's session.
+function sanitizeReceiptUrl(url) {
+  const trimmed = String(url || '').trim();
+  return /^https?:\/\//i.test(trimmed) ? trimmed : '';
+}
+
 let _myExpenseReports = [];
 let _activeExpenseReport = null; // { report, items } currently open in the modal
 
@@ -4612,7 +4619,8 @@ function renderExpenseReportModal() {
       } else if (isOwner) {
         receiptCell = `<input type="url" value="${escHtml(it.receipt_url || '')}" placeholder="Paste link…" onchange="updateLineItemReceiptUrl('${it.id}', this.value)" style="font-size:11px;padding:3px 6px;border:1px solid var(--gray-300);border-radius:4px;width:160px;color:var(--gray-700)">`;
       } else {
-        receiptCell = it.receipt_url ? `<a href="${escHtml(it.receipt_url)}" target="_blank" rel="noopener" style="font-size:12px">📎 View</a>` : '<span style="color:var(--gray-400);font-size:12px">—</span>';
+        const safeUrl = sanitizeReceiptUrl(it.receipt_url);
+        receiptCell = safeUrl ? `<a href="${escHtml(safeUrl)}" target="_blank" rel="noopener" style="font-size:12px">📎 View</a>` : '<span style="color:var(--gray-400);font-size:12px">—</span>';
       }
       return `<tr>
         <td class="text-sm text-mono">${formatDate(it.date)}</td>
@@ -4705,7 +4713,11 @@ async function quickAddExpenseItem() {
     if (!amount) { errEl.textContent = 'Enter an amount.'; return; }
     payload.description = document.getElementById('qa-description').value.trim();
     payload.amount = amount;
-    const receiptUrl = document.getElementById('qa-receipt-url').value.trim();
+    const receiptUrl = sanitizeReceiptUrl(document.getElementById('qa-receipt-url').value);
+    if (document.getElementById('qa-receipt-url').value.trim() && !receiptUrl) {
+      errEl.textContent = 'Receipt link must be a full web address starting with http:// or https://';
+      return;
+    }
     payload.receipt_url = receiptUrl || null;
     payload.receipt_status = receiptUrl ? 'attached' : 'pending';
   }
@@ -4726,10 +4738,14 @@ async function deleteExpenseLineItem(id) {
 }
 
 async function updateLineItemReceiptUrl(id, url) {
-  const trimmed = url.trim();
+  const clean = sanitizeReceiptUrl(url);
+  if (url.trim() && !clean) {
+    alert('Receipt link must be a full web address starting with http:// or https://');
+    return;
+  }
   await _sb.from('expense_line_items').update({
-    receipt_url: trimmed || null,
-    receipt_status: trimmed ? 'attached' : 'pending',
+    receipt_url: clean || null,
+    receipt_status: clean ? 'attached' : 'pending',
   }).eq('id', id);
 }
 
@@ -4739,9 +4755,10 @@ async function submitExpenseReport() {
   const { error } = await _sb.from('expense_reports').update({ status: 'submitted', submitted_at: new Date().toISOString(), notes: null }).eq('id', report.id);
   if (error) { alert('Could not submit: ' + error.message); return; }
   const incEntry = state._incidents.find(e => e.id === report.incident_id);
+  const { data: sess } = await _sb.auth.getSession();
   fetch('/.netlify/functions/send-email', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + (sess?.session?.access_token || '') },
     body: JSON.stringify({
       type: 'report_submitted',
       employeeName: state._session.employee.name,
@@ -4894,7 +4911,8 @@ function buildExpensePDFHtml(reports, byReport, start, end) {
     const total = items.reduce((s, it) => s + (it.amount || 0), 0);
     const rows = items.map(it => {
       const desc = it.description || (it.start_address ? `${it.start_address} → ${it.finish_address}` : '');
-      const receiptCell = it.category === 'mileage' ? '—' : (it.receipt_url ? `<a href="${escHtml(it.receipt_url)}">${escHtml(it.receipt_url)}</a>` : '<span style="color:#999">Pending</span>');
+      const safeUrl = sanitizeReceiptUrl(it.receipt_url);
+      const receiptCell = it.category === 'mileage' ? '—' : (safeUrl ? `<a href="${escHtml(safeUrl)}">${escHtml(safeUrl)}</a>` : '<span style="color:#999">Pending</span>');
       return `<tr>
         <td>${it.date || ''}</td>
         <td>${EXPENSE_CATEGORY_LABELS[it.category] || it.category}</td>
@@ -5379,15 +5397,14 @@ async function sendChatMessage() {
   appendChatMsg('user', msg);
   chatHistory.push({ role: 'user', content: msg });
   try {
+    // Model, token limit, and system prompt are pinned server-side; the
+    // function only accepts the message history from a logged-in employee.
+    var sessionData = await _sb.auth.getSession();
+    var accessToken = sessionData.data && sessionData.data.session ? sessionData.data.session.access_token : '';
     var resp = await fetch('/.netlify/functions/chat', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 1024,
-        system: 'You are a helpful assistant for Nomadic Clerical Support, a fire camp copy unit company. Help staff with questions about copy unit operations, invoicing procedures, equipment, and how to use the Nomadic Invoice Tool. Be concise, friendly, and practical. Do not offer to modify any software or settings — direct technical changes to admin.',
-        messages: chatHistory,
-      }),
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + accessToken },
+      body: JSON.stringify({ messages: chatHistory }),
     });
     if (!resp.ok) {
       var errData = await resp.json().catch(function(){ return {}; });

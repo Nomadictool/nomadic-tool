@@ -1,9 +1,27 @@
 const SUPABASE_URL = 'https://ljuvujkqxbpjneylmgse.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_kzcSAcuCxbnzhEV64GrJ_w_CuG53MSD';
+
+// Returns true only if the token belongs to an active employee.
+async function verifyEmployee(accessToken, serviceKey) {
+  if (!accessToken) return false;
+  const userResp = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
+    headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${accessToken}` }
+  });
+  if (!userResp.ok) return false;
+  const user = await userResp.json();
+  if (!user.id) return false;
+  const empResp = await fetch(`${SUPABASE_URL}/rest/v1/employees?id=eq.${user.id}&select=id,active`, {
+    headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` }
+  });
+  const rows = await empResp.json();
+  const emp = Array.isArray(rows) ? rows[0] : null;
+  return !!(emp && emp.active);
+}
 
 exports.handler = async function(event) {
   const headers = {
     'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
     'Content-Type': 'application/json',
   };
@@ -17,6 +35,13 @@ exports.handler = async function(event) {
 
   if (!resendKey || !fromEmail || !serviceKey) {
     return { statusCode: 500, headers, body: JSON.stringify({ error: 'Email not configured on server' }) };
+  }
+
+  const authHeader = event.headers.authorization || event.headers.Authorization || '';
+  const accessToken = authHeader.replace(/^Bearer\s+/i, '');
+  const isEmployee = await verifyEmployee(accessToken, serviceKey);
+  if (!isEmployee) {
+    return { statusCode: 401, headers, body: JSON.stringify({ error: 'Not authorized' }) };
   }
 
   let body;
