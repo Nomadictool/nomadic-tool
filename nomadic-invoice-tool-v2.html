@@ -2060,7 +2060,10 @@ const state = {
 };
 
 function todayStr() {
-  return new Date().toISOString().slice(0,10);
+  // Local date, not UTC — with toISOString(), evenings after 5 PM Pacific
+  // rolled over to tomorrow's date on the daily log and expense forms.
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 }
 // Save session-local state (which incident/date the user was on) to localStorage.
 // All incident data + rates are persisted to Supabase instead.
@@ -2215,12 +2218,17 @@ async function persistToSupabase() {
       const { error } = await _sb.from('incidents').upsert(rows);
       if (error) throw error;
     }
-    const { error: cfgErr } = await _sb.from('app_config').upsert({
-      key: 'rates',
-      value: state.rates,
-      updated_at: saveTs
-    });
-    if (cfgErr) throw cfgErr;
+    // Rates are admin-set; a staff device pushing its loaded copy would either
+    // be rejected by RLS (falsely flagging the whole save as failed) or
+    // overwrite fresher rates with stale ones.
+    if (state.isAdmin) {
+      const { error: cfgErr } = await _sb.from('app_config').upsert({
+        key: 'rates',
+        value: state.rates,
+        updated_at: saveTs
+      });
+      if (cfgErr) throw cfgErr;
+    }
     _lastSuccessfulSaveTs = saveTs;
     showSyncPulse('ok');
   } catch(err) {
