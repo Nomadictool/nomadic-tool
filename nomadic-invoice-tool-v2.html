@@ -621,6 +621,10 @@ body {
 .help-section-body li{margin-bottom:4px}
 .help-step{display:flex;gap:12px;margin-bottom:12px;align-items:flex-start}
 .help-step-num{background:var(--forest);color:white;width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;margin-top:1px}
+.help-section-toggle{width:100%;display:flex;justify-content:space-between;align-items:center;gap:10px;padding:12px 16px;background:var(--off-white);border:none;cursor:pointer;font-family:'Barlow Condensed',sans-serif;font-weight:700;font-size:14px;letter-spacing:.5px;text-transform:uppercase;color:var(--navy);text-align:left;transition:background .15s}
+.help-section-toggle:hover{background:var(--gray-100)}
+.help-section-toggle .toggle-icon{color:var(--amber);font-size:16px;font-weight:700;flex-shrink:0}
+.help-group-label{font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--amber);padding:14px 20px 6px}
 .inv-section-header{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--gray-500);padding:10px 0 6px;border-bottom:1px solid var(--gray-100);margin-bottom:2px}
 .inv-row{display:grid;grid-template-columns:1fr 80px 140px 40px;gap:10px;align-items:center;padding:8px 4px;border-bottom:1px solid var(--gray-50)}
 .inv-row:last-child{border-bottom:none}
@@ -1141,123 +1145,238 @@ body {
       <div>
         <div class="card" style="margin-bottom:16px">
           <div style="padding:20px;border-bottom:1px solid var(--gray-100)">
-            <h2 style="font-size:16px;font-weight:700;margin-bottom:4px">Quick Start Guide</h2>
-            <p style="font-size:12px;color:var(--gray-500)">Step-by-step instructions for this tool</p>
+            <h2 style="font-size:16px;font-weight:700;margin-bottom:4px">Training Guide</h2>
+            <p style="font-size:12px;color:var(--gray-500)">Everything you need to work a fire with this tool.</p>
+            <div style="margin-top:10px;background:#fff8ee;border-left:3px solid var(--amber);border-radius:4px;padding:8px 12px;font-size:12px;color:var(--amber-dim)">
+              <strong>New hire?</strong> Read sections 1–5 in order — that's a full shift, start to finish. Read 6–7 before your first pay period ends. Everything else is reference.
+            </div>
           </div>
           <div style="padding:4px 0" id="help-guide-sections">
 
+            <div class="help-group-label">Getting Started</div>
+
             <div class="help-section">
               <button class="help-section-toggle" onclick="toggleHelpSection(this)">
-                <span>1. Setting Up an Incident</span><span class="toggle-icon">+</span>
+                <span>1. Logging In &amp; Out</span><span class="toggle-icon">+</span>
               </button>
               <div class="help-section-body">
-                <ol class="help-step">
-                  <li>Ask your <strong>Admin</strong> to unlock admin mode (lock icon, top-right).</li>
-                  <li>Admin clicks <strong>+ New Incident</strong> (or Edit Incident on first launch).</li>
-                  <li>Fill in the <strong>Incident Name</strong>, <strong>E-Number</strong>, agency, billing period start date, and copy rates.</li>
-                  <li>Add staff names who will be working the fire.</li>
-                  <li>Click <strong>Start Incident →</strong>. The tool is now ready for orders.</li>
+                <ol>
+                  <li>You have your own <strong>6-digit PIN</strong> — your admin gives it to you on your first day. Enter it on the PIN screen to start every shift.</li>
+                  <li>The top-right of the header always shows <strong>"Logged in as [name]"</strong>. If that isn't you, click <strong>Not you? Log out</strong> and enter your own PIN. Everything you do is recorded under whoever is logged in — so always check.</li>
+                  <li>On a shared laptop, log out when you hand off to the next shift. If you forget, the tool logs out by itself after 30 minutes of no activity (it warns you a minute before).</li>
+                  <li>Forgot your PIN? Your admin can issue a new one — the old one stops working immediately.</li>
+                  <li>If you see <strong>"No fires assigned yet"</strong> after logging in, your admin hasn't added you to an incident. Contact them — there's nothing to fix on your end.</li>
                 </ol>
               </div>
             </div>
 
             <div class="help-section">
               <button class="help-section-toggle" onclick="toggleHelpSection(this)">
-                <span>2. Selecting Your Fire (Staff)</span><span class="toggle-icon">+</span>
+                <span>2. Finding Your Fire</span><span class="toggle-icon">+</span>
               </button>
               <div class="help-section-body">
-                <ol class="help-step">
-                  <li>Whenever the tool loads and there are 2 or more active incidents, a <strong>fire selection screen</strong> will appear.</li>
-                  <li>Pick your incident from the dropdown and click <strong>Continue</strong>.</li>
-                  <li>You will only see data for your fire until you reload the page or switch incidents.</li>
-                  <li>To switch fires, reload the page and pick a different one, or ask Admin to use the Incident Manager.</li>
+                <ol>
+                  <li>You only see fires you've been <strong>assigned to</strong> — one fire loads automatically, and if you're on more than one, use the <strong>⇄ Switch Fire</strong> button in the header.</li>
+                  <li>The dark badge in the header always shows the fire name and E-number you're currently working in. Glance at it before entering orders.</li>
+                  <li>If your fire is missing or you're seeing the wrong one, contact your admin — assignments are managed on their side.</li>
+                </ol>
+              </div>
+            </div>
+
+            <div class="help-group-label">Daily Work</div>
+
+            <div class="help-section">
+              <button class="help-section-toggle" onclick="toggleHelpSection(this)">
+                <span>3. The Daily Log &amp; Adding Orders</span><span class="toggle-icon">+</span>
+              </button>
+              <div class="help-section-body">
+                <ol>
+                  <li>The <strong>Daily Log</strong> tab is home base. The date defaults to today — use the <strong>&laquo; &raquo;</strong> arrows or the <strong>&#128203; Days</strong> button to move between days.</li>
+                  <li>Click <strong>+ Add Order</strong> for each copy job: enter the <strong>Department</strong> (Operations, Finance, Plans…), a short <strong>Job Description</strong>, and the quantities — B&amp;W, color, laminate, plots (use the plot guide buttons), legal, or custom items.</li>
+                  <li>Click <strong>Save Order</strong>. It appears in the day's list — click any row later to correct it.</li>
+                  <li>Everything saves automatically — watch for the green <strong>⟳ SYNCED</strong> flash in the header. There is no save button to forget.</li>
+                  <li><strong>Helicopter / Communications units:</strong> your unit bills a flat day rate, so there are no orders to enter. Your entire daily job in this tool is one click — see the next section.</li>
                 </ol>
               </div>
             </div>
 
             <div class="help-section">
               <button class="help-section-toggle" onclick="toggleHelpSection(this)">
-                <span>3. Adding Orders (Daily Log)</span><span class="toggle-icon">+</span>
+                <span>4. Approving Your Day — This Is How We Get Paid</span><span class="toggle-icon">+</span>
               </button>
               <div class="help-section-body">
-                <ol class="help-step">
-                  <li>Go to the <strong>Daily Log</strong> tab. The date defaults to today.</li>
-                  <li>Click <strong>+ Add Order</strong> to open the order form.</li>
-                  <li>Fill in Department, Job Description, and all applicable copy types (Black &amp; White, Color, Plot, Legal, Custom).</li>
-                  <li>Click <strong>Save Order</strong>. The order appears in the daily log.</li>
-                  <li>Use the arrow buttons (<strong>&lt; &gt;</strong>) or the calendar icon to navigate between days.</li>
-                  <li><strong>Helicopter / Communications units:</strong> this section is hidden — your unit bills a flat day rate with no copy orders. Just use <strong>✓ Approve Day</strong> (see step 4) for each day worked.</li>
+                <ol>
+                  <li>At the end of each day worked, click <strong>✓ Approve Day</strong> in the Daily Log. An approved day is what tells the company the day is <strong>billable</strong> — days that are never approved can fall out of the invoice totals.</li>
+                  <li>Approve <em>every</em> day worked — even a slow day with zero copy jobs. If the unit was deployed, the day bills.</li>
+                  <li><strong>Helicopter / Communications units:</strong> this is your one required click per day. Don't skip it.</li>
+                  <li>Approved days get a green <strong>✓ Approved</strong> badge and lock — editing one asks for confirmation first.</li>
+                  <li>Before demob, open the <strong>&#128203; Days</strong> panel and scan the whole deployment: every day worked should show <strong>Approved</strong>, no gaps.</li>
                 </ol>
               </div>
             </div>
 
             <div class="help-section">
               <button class="help-section-toggle" onclick="toggleHelpSection(this)">
-                <span>4. Approving a Day</span><span class="toggle-icon">+</span>
+                <span>5. Printing the Daily Invoice</span><span class="toggle-icon">+</span>
               </button>
               <div class="help-section-body">
-                <ol class="help-step">
-                  <li>When a day's orders are complete (or, for Helicopter/Comms units, at the end of each day worked), click <strong>✓ Approve Day</strong> in the Daily Log.</li>
-                  <li>Approved days are locked with a green badge. Editing requires a confirmation prompt.</li>
-                  <li>Only approved days (and days with orders) count toward the Incident Summary, Season Overview, and CSV export totals — so don't skip this step, even on a slow day with zero copy jobs.</li>
-                  <li>The Days panel (calendar icon) shows all dates with their Approved / Pending status.</li>
+                <ol>
+                  <li>In the Daily Log, select the date you want, then click <strong>Preview Invoice →</strong> (or go straight to the <strong>Invoice</strong> tab).</li>
+                  <li>Click <strong>🖨 Print Invoice</strong>, and in the print dialog choose <strong>Save as PDF</strong>.</li>
+                  <li>The file name is set automatically (Date_E#_FireName_Daily-Invoice) — <strong>don't rename it</strong>; finance relies on the pattern.</li>
+                  <li>The daily log sheet prints as page 2 of the same PDF automatically.</li>
+                </ol>
+              </div>
+            </div>
+
+            <div class="help-group-label">Expenses &amp; Reimbursement</div>
+
+            <div class="help-section">
+              <button class="help-section-toggle" onclick="toggleHelpSection(this)">
+                <span>6. Submitting an Expense Report</span><span class="toggle-icon">+</span>
+              </button>
+              <div class="help-section-body">
+                <ol>
+                  <li>Go to the <strong>💵 Expenses</strong> tab → <strong>+ New Expense Report</strong> → pick your pay period (pay periods are two weeks).</li>
+                  <li>Use the quick-add row for each expense: date, category, description, amount → <strong>+ Add</strong>. Repeat down your stack of receipts.</li>
+                  <li><strong>Mileage</strong> is special: enter start address, finish address, and miles — the dollar amount is calculated automatically at the company rate, and no receipt is needed.</li>
+                  <li>Paste a <strong>receipt link</strong> with each item (how-to in the next section).</li>
+                  <li>When the period ends, open the report and click <strong>Submit Report</strong>. Amounts lock after this, so double-check them first.</li>
+                  <li>Reports are due <strong>2 days after the pay period closes</strong> — a reminder banner appears on the Daily Log when you're close to the deadline with items still in draft.</li>
                 </ol>
               </div>
             </div>
 
             <div class="help-section">
               <button class="help-section-toggle" onclick="toggleHelpSection(this)">
-                <span>5. Generating an Invoice</span><span class="toggle-icon">+</span>
+                <span>7. Receipts &amp; Returned Reports</span><span class="toggle-icon">+</span>
               </button>
               <div class="help-section-body">
-                <ol class="help-step">
-                  <li>From the Daily Log, select the date you want to invoice, then click <strong>Preview Invoice →</strong> (or go to the <strong>Invoice</strong> tab directly).</li>
-                  <li>The Invoice tab shows that day's invoice and updates the page title to the correct file name (Date_E#_FireName_Daily-Invoice).</li>
-                  <li>Click <strong>🖨 Print Invoice</strong>, then in the print dialog (Ctrl+P or Cmd+P) select <strong>Save as PDF</strong>.</li>
-                  <li>The PDF file name will match the page title — no renaming needed.</li>
+                <ol>
+                  <li>Photograph the receipt with your phone, upload it to your Google Drive or Dropbox, and copy a <strong>share link</strong>. In Google Drive: tap the file → Share → set to <strong>"Anyone with the link can view"</strong> → Copy link.</li>
+                  <li>Paste the link into the <strong>Receipt</strong> field when adding the item. Links must start with http:// or https:// — that's what a copied share link looks like anyway.</li>
+                  <li>Forgot one? Open the report any time — even after submitting — and paste the link into that row's Receipt column. It saves the moment you click away.</li>
+                  <li>If your admin returns your report, you'll see a red <strong>"Returned for revision"</strong> banner explaining what to fix. Make the changes and click <strong>Submit Report</strong> again.</li>
+                  <li>Statuses at a glance: <strong>Draft</strong> = yours to edit → <strong>Submitted</strong> = locked, under review → <strong>Approved</strong> = done. Returned reports go back to Draft.</li>
+                </ol>
+              </div>
+            </div>
+
+            <div class="help-group-label">Shift Log</div>
+
+            <div class="help-section">
+              <button class="help-section-toggle" onclick="toggleHelpSection(this)">
+                <span>8. Shift Notes &amp; Checklists</span><span class="toggle-icon">+</span>
+              </button>
+              <div class="help-section-body">
+                <ol>
+                  <li>The <strong>📋 Shift Log</strong> tab is how shifts talk to each other. Before you leave, post a <strong>Shift Note</strong>: work in progress, complex orders promised for tomorrow, equipment acting up — anything the next person needs to know.</li>
+                  <li>Starting a shift? Read the note feed first. It's the handoff.</li>
+                  <li>Work through the <strong>Morning Checklist</strong> at the start of your day and the <strong>Evening Checklist</strong> before you close up. Click <strong>Reset</strong> at the start of your shift to clear the previous day's checkmarks.</li>
+                  <li>Either checklist can be printed for a paper copy on the counter.</li>
                 </ol>
               </div>
             </div>
 
             <div class="help-section">
               <button class="help-section-toggle" onclick="toggleHelpSection(this)">
-                <span>6. Shift Log &amp; Checklists</span><span class="toggle-icon">+</span>
+                <span>9. Inventory &amp; Supply Alerts</span><span class="toggle-icon">+</span>
               </button>
               <div class="help-section-body">
-                <ol class="help-step">
-                  <li>Go to the <strong>Shift Log</strong> tab.</li>
-                  <li>Under <strong>Shift Notes</strong>, enter your name, date, and a handoff message. Click Post Note.</li>
-                  <li>All team members see the running note feed — use this to communicate complex orders and work in progress between shifts.</li>
-                  <li>Use <strong>Morning Checklist</strong> and <strong>Evening Checklist</strong> to track daily inventory and equipment checks.</li>
-                  <li>Check off items as you go. Click Reset at the start of each shift to clear the previous session's checks.</li>
+                <ol>
+                  <li>In the Shift Log's <strong>Inventory</strong> tab, keep on-hand counts current and click <strong>💾 Save Counts</strong> when you update them.</li>
+                  <li>Running low on something? Flag it <strong>Low</strong> or <strong>Order Needed</strong> — a banner appears with everything flagged.</li>
+                  <li>Click <strong>✉ Email Order Alert</strong> to send the flagged list so supplies get ordered before you run out.</li>
+                  <li>Something not on the list? <strong>+ Add Item</strong> adds it for this unit.</li>
                 </ol>
               </div>
             </div>
 
+            <div class="help-group-label">Data Safety</div>
+
             <div class="help-section">
               <button class="help-section-toggle" onclick="toggleHelpSection(this)">
-                <span>7. Backing Up Your Data</span><span class="toggle-icon">+</span>
+                <span>10. Is My Work Saved?</span><span class="toggle-icon">+</span>
               </button>
               <div class="help-section-body">
-                <ol class="help-step">
-                  <li>Admin unlocks, then goes to the <strong>Rates</strong> tab.</li>
-                  <li>Click <strong>Export Backup</strong> to download a JSON file with all incident data and rates.</li>
-                  <li>Store the backup in a safe location (Google Drive, USB).</li>
-                  <li>To restore, click <strong>Restore Backup</strong> and select the JSON file. This replaces all current data.</li>
+                <ol>
+                  <li>There's no save button — every change saves itself. The green <strong>⟳ SYNCED</strong> flash in the header means it reached the cloud and the whole team can see it.</li>
+                  <li><strong>"Local backup: X min ago"</strong> in the header means a copy also lives on this computer — always, even with no internet.</li>
+                  <li>If you see <strong>⚠ SAVE FAILED — check connection</strong>: keep working normally. Your entries are safe in the local backup and will sync when the connection returns. Just don't clear the browser or switch to a different computer while it shows.</li>
+                  <li>The <strong>📥 Backup</strong> button downloads a full copy file — good practice before demob or on shaky camp internet. Your admin can restore from it if ever needed.</li>
                 </ol>
               </div>
             </div>
 
-            <div class="help-section">
-              <button class="help-section-toggle" onclick="toggleHelpSection(this)">
-                <span>8. Season Overview (Admin)</span><span class="toggle-icon">+</span>
-              </button>
-              <div class="help-section-body">
-                <ol class="help-step">
-                  <li>Admin unlocks, then clicks <strong>Season</strong> in the top nav.</li>
-                  <li>View a summary of all active incidents: total orders, revenue, approved days.</li>
-                  <li>Use this to replace your tracking spreadsheet at a glance.</li>
-                </ol>
+            <div id="help-admin-sections" style="display:none">
+              <div class="help-group-label">Admin Guide</div>
+
+              <div class="help-section">
+                <button class="help-section-toggle" onclick="toggleHelpSection(this)">
+                  <span>11. Incidents &amp; Assignments</span><span class="toggle-icon">+</span>
+                </button>
+                <div class="help-section-body">
+                  <ol>
+                    <li><strong>⚙ Incidents</strong> (header) manages all fires; <strong>✎ Edit Incident</strong> edits the one you're on. Setup covers name, E-number, agency, service type, unit, day rate, staff, and per diem.</li>
+                    <li>The <strong>Assigned Employees</strong> checklist in Setup controls who can see the fire at login. Unchecked employees can't see it exists.</li>
+                    <li>Staff can't create, delete, or archive incidents — those buttons only exist for admins.</li>
+                    <li>Archive a fire when it demobs; its data stays available for Season and Reports.</li>
+                  </ol>
+                </div>
+              </div>
+
+              <div class="help-section">
+                <button class="help-section-toggle" onclick="toggleHelpSection(this)">
+                  <span>12. Employees, PINs &amp; Logistics</span><span class="toggle-icon">+</span>
+                </button>
+                <div class="help-section-body">
+                  <ol>
+                    <li><strong>👥 Employees</strong> → New Employee generates a 6-digit PIN, shown <strong>once</strong> — share it right then. Lost PIN → <strong>Change PIN</strong> issues a new one instantly.</li>
+                    <li><strong>Deactivate</strong> kills a login immediately (open sessions included) and removes them from fire staff lists. Reactivate restores access.</li>
+                    <li>The roster tracks availability, location, and blackout dates per person; the logistics cards track hotel, double occupancy/roommates, and rental cars per fire.</li>
+                  </ol>
+                </div>
+              </div>
+
+              <div class="help-section">
+                <button class="help-section-toggle" onclick="toggleHelpSection(this)">
+                  <span>13. Rates, Settings &amp; Backups</span><span class="toggle-icon">+</span>
+                </button>
+                <div class="help-section-body">
+                  <ol>
+                    <li><strong>⚙ Rates</strong> holds copy/plot pricing for Federal and CalFire — <strong>Save All Rates</strong> after edits. Rate changes apply to new orders, not retroactively.</li>
+                    <li>Expense Settings: the mileage rate ($/mile) and the HR/Payroll email used when sending approved reports.</li>
+                    <li>The <strong>Error Log</strong> collects JavaScript errors from field devices — worth a glance if someone reports odd behavior.</li>
+                    <li><strong>Export Backup</strong> downloads everything as one file; <strong>Restore Backup</strong> replaces all current data with a chosen file — use with care.</li>
+                  </ol>
+                </div>
+              </div>
+
+              <div class="help-section">
+                <button class="help-section-toggle" onclick="toggleHelpSection(this)">
+                  <span>14. Reviewing &amp; Exporting Expenses</span><span class="toggle-icon">+</span>
+                </button>
+                <div class="help-section-body">
+                  <ol>
+                    <li><strong>✅ Review Expenses</strong> lists submitted reports, filtered by pay period. <strong>Approve</strong> or <strong>Reject</strong> right on each card — Reject asks for a note and sends the report back to the employee as an editable draft.</li>
+                    <li>Click any card to open the full report with line items and receipt links (📎 View).</li>
+                    <li>Once a period's reports are approved: <strong>📄 Export Approved PDF</strong> builds one document — itemized per employee, subtotals, grand total, receipt links — then Ctrl+P → Save as PDF and email it to HR.</li>
+                  </ol>
+                </div>
+              </div>
+
+              <div class="help-section">
+                <button class="help-section-toggle" onclick="toggleHelpSection(this)">
+                  <span>15. Season, Reports &amp; Fleet</span><span class="toggle-icon">+</span>
+                </button>
+                <div class="help-section-body">
+                  <ol>
+                    <li><strong>📊 Season</strong> tab: live revenue and day totals for every fire this season — the replacement for the tracking spreadsheet.</li>
+                    <li><strong>📋 Summary</strong> tab: day-by-day detail for the active fire, exportable to Excel.</li>
+                    <li><strong>📊 Reports</strong> (header): season report by year — monthly totals, revenue by unit, daily average — printable to PDF.</li>
+                    <li><strong>🚛 Fleet</strong> tab: every unit's registration, expiration dates, dimensions, and day rate.</li>
+                  </ol>
+                </div>
               </div>
             </div>
 
@@ -1272,7 +1391,7 @@ body {
           <a href="https://panel.nomadicsupport.com" target="_blank" class="btn btn-primary" style="display:inline-flex;align-items:center;gap:8px;font-size:13px;text-decoration:none">
             <span>&#127760;</span> Nomadic Support Portal
           </a>
-          <p style="font-size:11px;color:var(--gray-500);margin-top:8px">Full documentation, training guides, and resources at panel.nomadicsupport.com</p>
+          <p style="font-size:11px;color:var(--gray-500);margin-top:8px">Legacy portal — training content is moving into this Help tab. If something's missing here, check the portal or ask in the chat →</p>
         </div>
       </div><!-- /left column -->
 
@@ -2513,7 +2632,7 @@ function onLoginSuccess() {
   const wrapEl = document.getElementById('logged-in-as-display');
   if (nameEl) nameEl.textContent = state._session?.employee?.name || '—';
   if (wrapEl) wrapEl.style.display = 'flex';
-  const adminIds = ['manage-employees-btn', 'season-report-btn', 'nav-expense-review', 'nav-rates', 'nav-season', 'nav-summary', 'nav-fleet', 'manage-incidents-btn', 'day-total-box'];
+  const adminIds = ['manage-employees-btn', 'season-report-btn', 'nav-expense-review', 'nav-rates', 'nav-season', 'nav-summary', 'nav-fleet', 'manage-incidents-btn', 'day-total-box', 'help-admin-sections'];
   adminIds.forEach(elId => {
     const el = document.getElementById(elId);
     if (el) el.style.display = state.isAdmin ? '' : 'none';
@@ -5365,7 +5484,11 @@ function printHelpGuide() {
   html += '</style></head><body>';
   html += '<h1>Nomadic Invoice Tool &mdash; Quick Start Guide</h1>';
   html += '<p class="sub">Printed ' + todayStr() + '</p>';
+  var adminWrap = document.getElementById('help-admin-sections');
+  var includeAdmin = adminWrap && adminWrap.style.display !== 'none';
   sections.forEach(function(sec) {
+    // Staff printouts skip the admin guide — it's hidden on their screen too.
+    if (!includeAdmin && sec.closest('#help-admin-sections')) return;
     var titleEl = sec.querySelector('.help-section-toggle span');
     var title = titleEl ? titleEl.textContent : '';
     var body = sec.querySelector('.help-section-body');
@@ -5382,10 +5505,10 @@ function printHelpGuide() {
 function toggleHelpSection(btn) {
   var body = btn.nextElementSibling;
   var icon = btn.querySelector('.toggle-icon');
-  var isOpen = body.style.display !== 'none' && body.style.display !== '';
-  document.querySelectorAll('.help-section-body').forEach(function(b){ b.style.display = 'none'; });
-  document.querySelectorAll('.toggle-icon').forEach(function(i){ i.textContent = '+'; });
-  if (!isOpen) { body.style.display = ''; if (icon) icon.textContent = '−'; }
+  var isOpen = body.classList.contains('open');
+  document.querySelectorAll('.help-section-body').forEach(function(b){ b.classList.remove('open'); });
+  document.querySelectorAll('.help-section-toggle .toggle-icon').forEach(function(i){ i.textContent = '+'; });
+  if (!isOpen) { body.classList.add('open'); if (icon) icon.textContent = '−'; }
 }
 
 // ══════════ CHATBOT ══════════
