@@ -6447,6 +6447,7 @@ function computeSeasonStats(year) {
   const incStats = [];
   const monthRevenue = new Array(12).fill(0);
   const monthDays = new Array(12).fill(0);
+  const dayMap = {}; // date → { revenue, units } across all fires
   state._incidents.forEach(e => {
     if (!e.incident) return;
     const inc = e.incident;
@@ -6471,17 +6472,23 @@ function computeSeasonStats(year) {
       .filter(o => o.date && (!filterByYear || o.date.startsWith(year)))
       .reduce((s, o) => s + calcOrderTotal(o, agency), 0);
     const incRevenue = serviceTotal + days * (dayRate + addStaffRate);
-    // Monthly breakdown — day-rate portion per billing date
+    // Monthly + daily breakdown — day-rate portion per billing date
     [...billingDates].forEach(date => {
       const m = parseInt(date.substring(5,7)) - 1;
       monthRevenue[m] += dayRate + addStaffRate;
       monthDays[m] += 1;
+      const d = dayMap[date] || (dayMap[date] = { revenue: 0, units: 0 });
+      d.revenue += dayRate + addStaffRate;
+      d.units += 1;
     });
-    // Monthly breakdown — service totals by order date (clerical only)
+    // Monthly + daily breakdown — service totals by order date (clerical only)
     if (!simple) {
       (e.orders || []).filter(o => o.date && (!filterByYear || o.date.startsWith(year))).forEach(o => {
         const m = parseInt(o.date.substring(5,7)) - 1;
-        monthRevenue[m] += calcOrderTotal(o, agency);
+        const t = calcOrderTotal(o, agency);
+        monthRevenue[m] += t;
+        const d = dayMap[o.date] || (dayMap[o.date] = { revenue: 0, units: 0 });
+        d.revenue += t;
       });
     }
     incStats.push({ name: inc.name || 'Unnamed Fire', eNumber: inc.eNumber || '', agency, unit: inc.unit || '—', days, revenue: incRevenue });
@@ -6496,7 +6503,11 @@ function computeSeasonStats(year) {
     unitMap[i.unit].days += i.days;
     unitMap[i.unit].revenue += i.revenue;
   });
-  return _reportStats = { year, incStats, monthRevenue, monthDays, totalRevenue, totalDays, dailyAvg, unitMap };
+  const dailyTotals = Object.entries(dayMap)
+    .map(([date, v]) => ({ date, revenue: v.revenue, units: v.units }))
+    .sort((a, b) => b.date.localeCompare(a.date)); // newest first
+  const bestDay = dailyTotals.reduce((best, d) => d.revenue > (best ? best.revenue : 0) ? d : best, null);
+  return _reportStats = { year, incStats, monthRevenue, monthDays, totalRevenue, totalDays, dailyAvg, unitMap, dailyTotals, bestDay };
 }
 
 function renderSeasonReport(year) {
@@ -6553,14 +6564,40 @@ function renderSeasonReport(year) {
 
   ${Object.keys(s.unitMap).length>1 ? `
   <div class="section-label" style="margin-bottom:10px">Revenue by Unit</div>
-  <table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:16px">
+  <table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:28px">
     <thead><tr style="background:var(--off-white)">${th('Unit')}${thr('Fires')}${thr('Days')}${thr('Revenue')}</tr></thead>
     <tbody>
       ${Object.entries(s.unitMap).sort(([,a],[,b])=>b.revenue-a.revenue).map(([unit,u])=>`<tr>
         ${td(escHtml(unit),true)}${tdr(u.fires,false)}${tdr(u.days,false)}${tdr(fmt$(u.revenue),true)}
       </tr>`).join('')}
     </tbody>
+  </table>` : ''}
+
+  ${s.dailyTotals.length ? `
+  <div class="section-label" style="margin-bottom:10px">Daily Totals</div>
+  ${s.bestDay ? `<div style="background:#fff8ee;border-left:3px solid var(--amber);border-radius:4px;padding:8px 12px;font-size:12px;color:var(--amber-dim);margin-bottom:10px">
+    🔥 <strong>Biggest day:</strong> ${weekday(s.bestDay.date)} ${formatDate(s.bestDay.date)} — <strong>${fmt$(s.bestDay.revenue)}</strong> across ${s.bestDay.units} unit${s.bestDay.units!==1?'s':''}
+  </div>` : ''}
+  <table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:16px">
+    <thead><tr style="background:var(--off-white)">${th('Date')}${thr('Units')}${thr('Revenue')}${th('')}</tr></thead>
+    <tbody>
+      ${s.dailyTotals.map(d => {
+        const isBest = s.bestDay && d.date === s.bestDay.date;
+        const pct = s.bestDay && s.bestDay.revenue > 0 ? Math.max(2, Math.round(d.revenue / s.bestDay.revenue * 100)) : 0;
+        return `<tr${isBest ? ' style="background:#fff8ee"' : ''}>
+        ${td(`<span style="color:var(--gray-400);font-size:11px;margin-right:6px">${weekday(d.date)}</span>${formatDate(d.date)}${isBest ? ' 🔥' : ''}`, true)}
+        ${tdr(d.units, false)}
+        ${tdr(fmt$(d.revenue), true)}
+        <td style="padding:8px 10px;border-bottom:1px solid var(--gray-100);width:34%"><div style="height:10px;border-radius:5px;background:${isBest ? 'var(--amber)' : 'var(--pine)'};width:${pct}%"></div></td>
+      </tr>`;
+      }).join('')}
+    </tbody>
   </table>` : ''}`;
+}
+
+// Short weekday label for report date rows, e.g. "Sat"
+function weekday(dateStr) {
+  return new Date(dateStr + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short' });
 }
 
 function printSeasonReport() {
@@ -6612,6 +6649,24 @@ function printSeasonReport() {
       ${Object.entries(s.unitMap).sort(([,a],[,b])=>b.revenue-a.revenue).map(([unit,u])=>`<tr>
         <td><b>${escHtml(unit)}</b></td><td class="r gray">${u.fires}</td><td class="r gray">${u.days}</td><td class="r mono">${fmt$(u.revenue)}</td>
       </tr>`).join('')}
+    </tbody>
+  </table>` : ''}
+  ${s.dailyTotals && s.dailyTotals.length ? `
+  <div class="sec">Daily Totals</div>
+  ${s.bestDay ? `<p style="font-size:12px;margin:0 0 10px"><b>Biggest day:</b> ${weekday(s.bestDay.date)} ${formatDate(s.bestDay.date)} — <b>${fmt$(s.bestDay.revenue)}</b> across ${s.bestDay.units} unit${s.bestDay.units!==1?'s':''}</p>` : ''}
+  <table>
+    <thead><tr><th>Date</th><th class="r">Units</th><th class="r">Revenue</th><th></th></tr></thead>
+    <tbody>
+      ${s.dailyTotals.map(d => {
+        const isBest = s.bestDay && d.date === s.bestDay.date;
+        const pct = s.bestDay && s.bestDay.revenue > 0 ? Math.max(2, Math.round(d.revenue / s.bestDay.revenue * 100)) : 0;
+        return `<tr${isBest ? ' style="background:#fff8ee"' : ''}>
+        <td><span class="gray" style="font-size:11px">${weekday(d.date)}</span> <b>${formatDate(d.date)}</b></td>
+        <td class="r gray">${d.units}</td>
+        <td class="r mono">${fmt$(d.revenue)}</td>
+        <td style="width:30%"><div style="height:9px;border-radius:4px;background:${isBest ? '#f5a623' : '#86A199'};width:${pct}%"></div></td>
+      </tr>`;
+      }).join('')}
     </tbody>
   </table>` : ''}
   <br><button onclick="window.print()">Print / Save as PDF</button>
