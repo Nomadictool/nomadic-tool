@@ -2828,23 +2828,39 @@ function getIncidentStaffCount() {
 
 // Compute the per diem claim for a given date
 // M&IE is per employee; lodging is per room at double occupancy
+// Days claimed since the snapshot fix carry their own rates/headcount, so
+// later edits to the incident's settings never change already-claimed days.
+// Legacy days (claimed before snapshots existed) still read live rates.
 function calcPerDiemForDate(date) {
   const inc = state.incident;
-  if (!inc?.perDiemEnabled) return { meals: 0, lodging: 0, total: 0, staffCount: 0, rooms: 0 };
-  const day        = (state.perDiem || {})[date] || {};
-  const staffCount = getIncidentStaffCount();
-  const rooms      = Math.ceil(staffCount / 2);
-  const meals      = day.meals   ? (inc.perDiemMealsRate   || 0) * staffCount : 0;
-  const lodging    = day.lodging ? (inc.perDiemLodgingRate || 0) * rooms      : 0;
-  return { meals, lodging, total: meals + lodging, staffCount, rooms };
+  const day = (state.perDiem || {})[date] || {};
+  const hasSnapshot = day.mealsRate !== undefined;
+  if (!inc?.perDiemEnabled && !hasSnapshot) return { meals: 0, lodging: 0, total: 0, staffCount: 0, rooms: 0, mealsRate: 0, lodgingRate: 0 };
+  const staffCount  = hasSnapshot ? (day.staffCount || 0) : getIncidentStaffCount();
+  const rooms       = hasSnapshot ? (day.rooms || 0)      : Math.ceil(staffCount / 2);
+  const mealsRate   = hasSnapshot ? (day.mealsRate || 0)   : (inc?.perDiemMealsRate || 0);
+  const lodgingRate = hasSnapshot ? (day.lodgingRate || 0) : (inc?.perDiemLodgingRate || 0);
+  const meals   = day.meals   ? mealsRate * staffCount : 0;
+  const lodging = day.lodging ? lodgingRate * rooms    : 0;
+  return { meals, lodging, total: meals + lodging, staffCount, rooms, mealsRate, lodgingRate };
 }
 
 // Save per diem checkbox state for a specific date
 function savePerDiem(date) {
+  if (isDayApproved(date) && !confirm('This day has been approved and its invoice may already be finalized. Change its per diem anyway?')) {
+    renderPerDiemSection(date);
+    return;
+  }
+  const inc = state.incident;
+  const staffCount = getIncidentStaffCount();
   const pd = Object.assign({}, state.perDiem);
   pd[date] = {
     meals:   document.getElementById('pd-meals')?.checked   || false,
     lodging: document.getElementById('pd-lodging')?.checked || false,
+    mealsRate:   inc?.perDiemMealsRate   || 0,
+    lodgingRate: inc?.perDiemLodgingRate || 0,
+    staffCount,
+    rooms: Math.ceil(staffCount / 2),
   };
   state.perDiem = pd;
   saveState();
@@ -2857,12 +2873,14 @@ function renderPerDiemSection(date) {
   const container = document.getElementById('perdiem-section');
   if (!container) return;
   const inc = state.incident;
-  if (!inc?.perDiemEnabled) { container.style.display = 'none'; return; }
+  const day = (state.perDiem || {})[date] || {};
+  // Keep showing a day that already has a claim even if per diem was since
+  // turned off for the incident — the claim still bills.
+  if (!inc?.perDiemEnabled && !day.meals && !day.lodging) { container.style.display = 'none'; return; }
   container.style.display = 'block';
-  const day        = (state.perDiem || {})[date] || {};
   const claim      = calcPerDiemForDate(date);
-  const hasMeals   = (inc.perDiemMealsRate   || 0) > 0;
-  const hasLodging = (inc.perDiemLodgingRate || 0) > 0;
+  const hasMeals   = claim.mealsRate > 0;
+  const hasLodging = claim.lodgingRate > 0;
   const staffCount = claim.staffCount;
   const rooms      = claim.rooms;
   container.innerHTML = `
@@ -2879,7 +2897,7 @@ function renderPerDiemSection(date) {
               style="width:18px;height:18px;accent-color:var(--forest);cursor:pointer">
             <div>
               <div style="font-size:14px;font-weight:600">Meals</div>
-              <div style="font-size:12px;color:var(--gray-500)">$${(inc.perDiemMealsRate||0).toFixed(2)}/person × ${staffCount} staff = <strong>$${((inc.perDiemMealsRate||0)*staffCount).toFixed(2)}</strong></div>
+              <div style="font-size:12px;color:var(--gray-500)">$${claim.mealsRate.toFixed(2)}/person × ${staffCount} staff = <strong>$${(claim.mealsRate*staffCount).toFixed(2)}</strong></div>
             </div>
           </label>` : ''}
           ${hasLodging ? `
@@ -2888,7 +2906,7 @@ function renderPerDiemSection(date) {
               style="width:18px;height:18px;accent-color:var(--forest);cursor:pointer">
             <div>
               <div style="font-size:14px;font-weight:600">Lodging</div>
-              <div style="font-size:12px;color:var(--gray-500)">$${(inc.perDiemLodgingRate||0).toFixed(2)}/room × ${rooms} room${rooms!==1?'s':''} (dbl occ.) = <strong>$${((inc.perDiemLodgingRate||0)*rooms).toFixed(2)}</strong></div>
+              <div style="font-size:12px;color:var(--gray-500)">$${claim.lodgingRate.toFixed(2)}/room × ${rooms} room${rooms!==1?'s':''} (dbl occ.) = <strong>$${(claim.lodgingRate*rooms).toFixed(2)}</strong></div>
             </div>
           </label>` : ''}
         </div>
@@ -3642,8 +3660,8 @@ function renderInvoice() {
           </tr>`).join('')}
           ${pdClaim.total > 0 ? `
             <tr class="rate-row"><td colspan="5" style="font-weight:600;color:var(--navy);padding-top:10px">Per Diem</td></tr>
-            ${pdClaim.meals > 0 ? `<tr class="rate-row"><td>M&amp;IE Per Diem</td><td>${pdClaim.staffCount}</td><td>person</td><td class="inv-money">$${(inc.perDiemMealsRate||0).toFixed(2)}</td><td class="inv-money">$${pdClaim.meals.toFixed(2)}</td></tr>` : ''}
-            ${pdClaim.lodging > 0 ? `<tr class="rate-row"><td>Lodging Per Diem (dbl occ.)</td><td>${pdClaim.rooms}</td><td>room</td><td class="inv-money">$${(inc.perDiemLodgingRate||0).toFixed(2)}</td><td class="inv-money">$${pdClaim.lodging.toFixed(2)}</td></tr>` : ''}
+            ${pdClaim.meals > 0 ? `<tr class="rate-row"><td>M&amp;IE Per Diem</td><td>${pdClaim.staffCount}</td><td>person</td><td class="inv-money">$${pdClaim.mealsRate.toFixed(2)}</td><td class="inv-money">$${pdClaim.meals.toFixed(2)}</td></tr>` : ''}
+            ${pdClaim.lodging > 0 ? `<tr class="rate-row"><td>Lodging Per Diem (dbl occ.)</td><td>${pdClaim.rooms}</td><td>room</td><td class="inv-money">$${pdClaim.lodgingRate.toFixed(2)}</td><td class="inv-money">$${pdClaim.lodging.toFixed(2)}</td></tr>` : ''}
           ` : ''}
         </tbody>
         <tfoot>
