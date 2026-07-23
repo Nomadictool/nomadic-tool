@@ -4368,9 +4368,24 @@ async function renderEmployeeManager() {
     on_incident: { label: 'On Incident', bg: '#fef3c7', color: '#92400e' },
   };
   const today = todayStr();
-  const rosterRows = _rosterCache.map(p => {
-    const fireName = getPersonActiveFire(p.name);
-    const statusKey = fireName ? 'on_incident' : (p.status || 'available');
+  // Sort order: Available (by earliest available date) → On Incident → Unavailable → Inactive.
+  const GROUP_ORDER = { available: 0, on_incident: 1, unavailable: 2, inactive: 3 };
+  const rosterSorted = _rosterCache
+    .map(p => ({ p, statusKey: getPersonActiveFire(p.name) ? 'on_incident' : (p.status || 'available') }))
+    .sort((a, b) => {
+      const ga = GROUP_ORDER[a.statusKey] ?? 0;
+      const gb = GROUP_ORDER[b.statusKey] ?? 0;
+      if (ga !== gb) return ga - gb;
+      if (a.statusKey === 'available') {
+        // Empty date = available now → sort to the top of the group.
+        const da = a.p.availableAsOf || a.p.locationAsOf || '0000-00-00';
+        const db = b.p.availableAsOf || b.p.locationAsOf || '0000-00-00';
+        if (da !== db) return da.localeCompare(db);
+      }
+      return (a.p.name || '').localeCompare(b.p.name || '');
+    });
+  const rosterRows = rosterSorted.map(({ p, statusKey }) => {
+    const fireName = statusKey === 'on_incident' ? getPersonActiveFire(p.name) : null;
     const s = statusCfg[statusKey] || statusCfg.available;
     const upcomingBlackouts = (p.blackoutDates || []).filter(b => b.start && (b.end || b.start) >= today);
     const blackoutChip = upcomingBlackouts.length
