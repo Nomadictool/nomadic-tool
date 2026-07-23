@@ -6318,13 +6318,23 @@ async function saveRoster() {
   await _sb.from('app_config').upsert({ key: 'employee_roster', value: _rosterCache }, { onConflict: 'key' });
 }
 
+// Normalize a name for matching: lowercase, trim, and collapse inner runs of
+// whitespace, so a stray/trailing/double space typed into a staff list doesn't
+// break the roster-to-incident match.
+function normalizeName(n) {
+  return String(n || '').toLowerCase().trim().replace(/\s+/g, ' ');
+}
+
 function getPersonActiveFire(name) {
-  const lc = name.toLowerCase();
+  const lc = normalizeName(name);
+  if (!lc) return null;
   for (const entry of state._incidents) {
     if (!entry.incident || entry.archived) continue;
     const primary = (entry.incident.staffNames || []);
-    const additional = entry.incident.addStaff ? (entry.incident.additionalStaff || []).map(s => s.name) : [];
-    if ([...primary, ...additional].some(n => n && n.toLowerCase() === lc)) return entry.incident.name || 'Unknown Fire';
+    // Include agency-requested staff whether or not the addStaff toggle is on —
+    // someone listed there is on the fire regardless of that flag's state.
+    const additional = (entry.incident.additionalStaff || []).map(s => s.name);
+    if ([...primary, ...additional].some(n => normalizeName(n) === lc)) return entry.incident.name || 'Unknown Fire';
   }
   return null;
 }
