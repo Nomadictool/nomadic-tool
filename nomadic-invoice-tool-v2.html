@@ -4360,6 +4360,30 @@ async function renderEmployeeManager() {
   const body = document.getElementById('employee-manager-body');
   body.innerHTML = '<div style="color:var(--gray-400);font-size:13px">Loading…</div>';
 
+  // Load PIN employees + their fire assignments up front. A person can be put
+  // on a fire two ways — typed into the free-text Staff Members list, OR checked
+  // in the Assigned Employees list (which writes fire_assignments for PIN access).
+  // The roster status has to honor both, so we build a name→fire lookup here.
+  const { data: employees } = await _sb.from('employees').select('id,name,role,active').order('name');
+  const empList = employees || [];
+  _employeeManagerCache = empList;
+  const { data: assignmentRows } = await _sb.from('fire_assignments').select('employee_id,incident_id');
+  const assigns = assignmentRows || [];
+  const activeIncidentById = {};
+  state._incidents.forEach(e => { if (e.incident && !e.archived) activeIncidentById[e.id] = e.incident.name || 'Unknown Fire'; });
+  const empById = {};
+  empList.forEach(e => { empById[e.id] = e; });
+  const assignedFireByName = {}; // normalized name → active fire name (login/checklist based)
+  const countByEmployee = {};
+  assigns.forEach(a => {
+    countByEmployee[a.employee_id] = (countByEmployee[a.employee_id] || 0) + 1;
+    const emp = empById[a.employee_id];
+    const fireName = activeIncidentById[a.incident_id];
+    if (emp && fireName && !assignedFireByName[normalizeName(emp.name)]) assignedFireByName[normalizeName(emp.name)] = fireName;
+  });
+  // A roster person is "on a fire" if they're in a fire's staff list OR assigned via checklist.
+  const resolveFire = name => getPersonActiveFire(name) || assignedFireByName[normalizeName(name)] || null;
+
   // ── SECTION 1: Employee Roster ──
   const statusCfg = {
     available:   { label: 'Available',   bg: '#d1fae5', color: '#065f46' },
@@ -4371,7 +4395,7 @@ async function renderEmployeeManager() {
   // Sort order: Available (by earliest available date) → On Incident → Unavailable → Inactive.
   const GROUP_ORDER = { available: 0, on_incident: 1, unavailable: 2, inactive: 3 };
   const rosterSorted = _rosterCache
-    .map(p => ({ p, statusKey: getPersonActiveFire(p.name) ? 'on_incident' : (p.status || 'available') }))
+    .map(p => { const fire = resolveFire(p.name); return { p, fire, statusKey: fire ? 'on_incident' : (p.status || 'available') }; })
     .sort((a, b) => {
       const ga = GROUP_ORDER[a.statusKey] ?? 0;
       const gb = GROUP_ORDER[b.statusKey] ?? 0;
@@ -4384,8 +4408,8 @@ async function renderEmployeeManager() {
       }
       return (a.p.name || '').localeCompare(b.p.name || '');
     });
-  const rosterRows = rosterSorted.map(({ p, statusKey }) => {
-    const fireName = statusKey === 'on_incident' ? getPersonActiveFire(p.name) : null;
+  const rosterRows = rosterSorted.map(({ p, statusKey, fire }) => {
+    const fireName = statusKey === 'on_incident' ? fire : null;
     const s = statusCfg[statusKey] || statusCfg.available;
     const upcomingBlackouts = (p.blackoutDates || []).filter(b => b.start && (b.end || b.start) >= today);
     const blackoutChip = upcomingBlackouts.length
@@ -4490,14 +4514,10 @@ async function renderEmployeeManager() {
   </div>`;
 
   // ── SECTION 3: PIN System (admin only) ──
-  const { data: employees, error } = await _sb.from('employees').select('id,name,role,active').order('name');
-  _employeeManagerCache = employees || [];
+  // Reuses empList / countByEmployee fetched at the top of this function.
   let pinHtml = '';
-  if (!error && employees && employees.length > 0) {
-    const { data: assignments } = await _sb.from('fire_assignments').select('employee_id');
-    const countByEmployee = {};
-    (assignments || []).forEach(a => { countByEmployee[a.employee_id] = (countByEmployee[a.employee_id] || 0) + 1; });
-    pinHtml = employees.map(e => `
+  if (empList.length > 0) {
+    pinHtml = empList.map(e => `
       <div style="padding:12px 0;border-bottom:1px solid var(--gray-100);display:flex;align-items:center;gap:10px;flex-wrap:wrap;${e.active?'':'opacity:0.55'}">
         <div style="flex:1;min-width:120px">
           <div style="font-weight:600;font-size:13px;color:var(--navy)">${escHtml(e.name)}
