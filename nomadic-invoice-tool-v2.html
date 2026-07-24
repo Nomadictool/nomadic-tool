@@ -629,6 +629,12 @@ body {
 .inv-row{display:grid;grid-template-columns:1fr 80px 140px 40px;gap:10px;align-items:center;padding:8px 4px;border-bottom:1px solid var(--gray-50)}
 .inv-row:last-child{border-bottom:none}
 .inv-row:hover{background:var(--off-white);border-radius:4px}
+.inv-order-line{display:flex;align-items:center;gap:8px;padding:0 4px 10px 4px;margin-top:-2px;flex-wrap:wrap}
+.inv-order-line label{display:flex;align-items:center;gap:5px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--gray-400);white-space:nowrap;cursor:pointer}
+.inv-order-line label input{width:15px;height:15px;accent-color:#16a34a;cursor:pointer}
+.inv-order-line input[type=text]{flex:1;min-width:140px;padding:4px 8px;border:1px solid var(--gray-200);border-radius:5px;font-size:12px;font-family:inherit}
+.inv-order-line.ordered{background:#f0fdf4;border-radius:6px}
+.inv-order-line.ordered label{color:#16a34a}
 .inv-name{font-size:13px;color:var(--gray-800)}
 .inv-unit{font-size:11px;color:var(--gray-400)}
 .inv-qty{width:100%;padding:6px 8px;border:1px solid var(--gray-200);border-radius:6px;font-size:13px;text-align:center}
@@ -5947,6 +5953,14 @@ function renderInventory() {
         '</div>' +
         delBtn +
       '</div>';
+      // Order-status line: shown for anything low/to-order or already ordered, so
+      // staff can see we placed the order and the confirmation number.
+      if (item.flag === 'low' || item.flag === 'order' || item.ordered) {
+        html += '<div class="inv-order-line' + (item.ordered ? ' ordered' : '') + '">' +
+          '<label><input type="checkbox" ' + (item.ordered ? 'checked' : '') + ' onchange="toggleInventoryOrdered(\'' + item.id + '\',this.checked)">' + (item.ordered ? '✓ Ordered' : 'Ordered') + '</label>' +
+          '<input type="text" placeholder="Confirmation # / notes for staff" value="' + escHtml(item.orderNote || '') + '" onchange="updateInventoryOrderNote(\'' + item.id + '\',this.value)">' +
+        '</div>';
+      }
     });
     html += '</div>';
   });
@@ -5988,16 +6002,30 @@ function setInventoryFlag(id, flag, clickedBtn) {
   if (qtyEl) item.qty = qtyEl.value === '' ? '' : (parseInt(qtyEl.value) || 0);
   entry.inventoryLastUpdated = new Date().toISOString();
   saveState();
-  var tsEl = document.getElementById('inv-last-updated');
-  if (tsEl) tsEl.textContent = formatInventoryTs(entry.inventoryLastUpdated);
-  // Update button group UI
-  var row = clickedBtn.closest('.inv-flag');
-  if (row) {
-    row.querySelectorAll('button').forEach(function(b){ b.classList.remove('active'); });
-    clickedBtn.classList.add('active');
-  }
-  updateInventoryAlertPanel();
+  // Full re-render so the Ordered line appears/disappears with the flag.
+  renderInventory();
   updateInventoryBadge();
+}
+
+function toggleInventoryOrdered(id, checked) {
+  var entry = state._incidents.find(function(i){ return i.id === state._activeId; });
+  if (!entry || !entry.inventory) return;
+  var item = entry.inventory.find(function(x){ return x.id === id; });
+  if (!item) return;
+  item.ordered = !!checked;
+  entry.inventoryLastUpdated = new Date().toISOString();
+  saveState();
+  renderInventory();
+}
+
+function updateInventoryOrderNote(id, val) {
+  var entry = state._incidents.find(function(i){ return i.id === state._activeId; });
+  if (!entry || !entry.inventory) return;
+  var item = entry.inventory.find(function(x){ return x.id === id; });
+  if (!item) return;
+  item.orderNote = val;
+  entry.inventoryLastUpdated = new Date().toISOString();
+  saveState();
 }
 
 function updateInventoryAlertPanel() {
@@ -6017,9 +6045,14 @@ function updateInventoryAlertPanel() {
   if (orders.length) parts.push(orders.length + ' to order');
   if (lows.length)   parts.push(lows.length + ' low stock');
   detailEl.textContent = parts.join(', ');
+  var fmtItem = function(x) {
+    var s = escHtml(x.name) + (x.qty !== '' ? ' (on hand: ' + x.qty + ' ' + escHtml(x.unit) + ')' : '');
+    if (x.ordered) s += ' <span style="color:#16a34a;font-weight:700">✓ ordered' + (x.orderNote ? ' — ' + escHtml(x.orderNote) : '') + '</span>';
+    return s;
+  };
   var listHtml = '';
-  if (orders.length) { listHtml += '<strong>ORDER NEEDED:</strong> ' + orders.map(function(x){ return escHtml(x.name) + (x.qty !== '' ? ' (on hand: ' + x.qty + ' ' + escHtml(x.unit) + ')' : ''); }).join(', ') + '<br>'; }
-  if (lows.length)   { listHtml += '<strong>LOW STOCK:</strong> '    + lows.map(function(x){   return escHtml(x.name) + (x.qty !== '' ? ' (on hand: ' + x.qty + ' ' + escHtml(x.unit) + ')' : ''); }).join(', '); }
+  if (orders.length) { listHtml += '<strong>ORDER NEEDED:</strong> ' + orders.map(fmtItem).join(', ') + '<br>'; }
+  if (lows.length)   { listHtml += '<strong>LOW STOCK:</strong> '    + lows.map(fmtItem).join(', '); }
   listEl.innerHTML = listHtml;
 }
 
