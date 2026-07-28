@@ -737,11 +737,15 @@ body {
           <input type="text" id="setup-incident-name" placeholder="e.g. Hot Fire">
         </div>
         <div class="form-group">
-          <label>Resource / E-Number</label>
+          <label>Resource Order / E-Number</label>
           <input type="text" id="setup-enumber" placeholder="e.g. E-123">
         </div>
       </div>
       <div class="form-grid" style="margin-bottom:16px">
+        <div class="form-group">
+          <label>Incident Number</label>
+          <input type="text" id="setup-incident-number" placeholder="e.g. CA-XYZ-001234">
+        </div>
         <div class="form-group">
           <label>Agency Type</label>
           <select id="setup-agency" onchange="onAgencyChange()">
@@ -896,6 +900,7 @@ body {
           <div id="date-nav-panel" style="display:none;position:absolute;top:calc(100% + 6px);left:0;z-index:200;background:white;border:1px solid var(--gray-200);border-radius:var(--radius);box-shadow:0 4px 20px rgba(0,0,0,0.15);min-width:270px;max-height:340px;overflow-y:auto"></div>
         </div>
         <button class="btn btn-primary" id="add-order-btn" onclick="openAddOrder()">+ Add Order</button>
+        <button class="btn btn-primary" id="shift-ticket-btn" onclick="openShiftTicketModal()" style="display:none">🎫 Shift Ticket</button>
         <span id="day-rate-only-note" style="display:none;font-size:12px;color:var(--gray-500);font-style:italic">Day rate unit — no copy orders</span>
       </div>
     </div>
@@ -1796,6 +1801,48 @@ body {
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="closePaymentModal()">Cancel</button>
       <button class="btn btn-primary" onclick="savePaymentModal()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ SHIFT TICKET MODAL (heli/comms units) ══════════ -->
+<div class="modal-overlay" id="shift-ticket-modal" style="display:none;z-index:600">
+  <div class="modal" style="max-width:640px">
+    <div class="modal-header">
+      <div class="modal-title">🎫 Emergency Equipment Shift Ticket</div>
+      <button onclick="closeShiftTicketModal()" style="background:none;border:none;color:var(--gray-400);font-size:20px;cursor:pointer">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="shift-ticket-autofill" style="background:var(--off-white);border-radius:var(--radius);padding:12px 14px;margin-bottom:16px;font-size:12px;color:var(--gray-600);line-height:1.7"></div>
+      <div class="form-grid" style="margin-bottom:14px">
+        <div class="form-group"><label>Operator Name</label><input type="text" id="st-operator" placeholder="Unit operator"></div>
+        <div class="form-group"><label>Invoice Posted By (initials)</label><input type="text" id="st-posted-by" placeholder="e.g. SB"></div>
+      </div>
+      <div class="form-group" style="margin-bottom:14px">
+        <label>Equipment Status</label>
+        <select id="st-status">
+          <option value="">— none —</option>
+          <option value="a">a. Inspected and under agreement</option>
+          <option value="b">b. Released by Government</option>
+          <option value="c">c. Withdrawn by Contractor</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin-bottom:16px">
+        <label>Remarks (optional)</label>
+        <textarea id="st-remarks" rows="2" style="width:100%;padding:8px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:13px;font-family:inherit;resize:vertical"></textarea>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+        <label style="font-size:13px;font-weight:600;color:var(--navy)">Days per ticket:</label>
+        <select id="st-days-per" onchange="renderShiftTicketBlocks()" style="padding:5px 10px;border:1px solid var(--gray-200);border-radius:6px;font-size:13px">
+          <option value="5" selected>5 days (standard)</option>
+          <option value="1">1 day</option>
+        </select>
+      </div>
+      <div class="section-label" style="margin-top:4px">Approved Days</div>
+      <div id="shift-ticket-blocks" style="max-height:240px;overflow-y:auto"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeShiftTicketModal()">Close</button>
     </div>
   </div>
 </div>
@@ -3001,6 +3048,7 @@ function toggleAddStaffSetup() {
 function saveSetup() {
   const name = document.getElementById('setup-incident-name').value.trim();
   const eNumber = document.getElementById('setup-enumber').value.trim();
+  const incidentNumber = document.getElementById('setup-incident-number').value.trim();
   const agency = document.getElementById('setup-agency').value;
   const startDate = document.getElementById('setup-start-date').value;
   const dayRate = parseFloat(document.getElementById('setup-day-rate').value) || (agency === 'calfire' ? 3455 : 1200);
@@ -3035,7 +3083,7 @@ function saveSetup() {
     ? [...document.querySelectorAll('.setup-employee-checkbox:checked')].map(c => c.value)
     : null;
 
-  const incData = { name, eNumber, agency, startDate, dayRate, serviceType, unit, staffNames, addStaff, additionalStaff, perDiemEnabled, perDiemMealsRate, perDiemLodgingRate };
+  const incData = { name, eNumber, incidentNumber, agency, startDate, dayRate, serviceType, unit, staffNames, addStaff, additionalStaff, perDiemEnabled, perDiemMealsRate, perDiemLodgingRate };
   if (existingEntry) {
     existingEntry.incident = incData;
   } else {
@@ -3074,6 +3122,7 @@ function showSetup() {
     const inc = state.incident;
     document.getElementById('setup-incident-name').value = inc.name;
     document.getElementById('setup-enumber').value = inc.eNumber;
+    document.getElementById('setup-incident-number').value = inc.incidentNumber || '';
     document.getElementById('setup-agency').value = inc.agency;
     document.getElementById('setup-start-date').value = inc.startDate;
     document.getElementById('setup-day-rate').value = inc.dayRate;
@@ -3185,6 +3234,8 @@ function applyIncident() {
   if (addOrderBtnBottom && isSimple) addOrderBtnBottom.style.display = 'none';
   const orderNote = document.getElementById('day-rate-only-note');
   if (orderNote) orderNote.style.display = isSimple ? '' : 'none';
+  const shiftBtn = document.getElementById('shift-ticket-btn');
+  if (shiftBtn) shiftBtn.style.display = isSimple ? '' : 'none';
 }
 
 // ══════════ SCREENS ══════════
@@ -4382,6 +4433,7 @@ function startNewIncident() {
   state._activeId = 'new_' + Date.now();
   document.getElementById('setup-incident-name').value = '';
   document.getElementById('setup-enumber').value = '';
+  document.getElementById('setup-incident-number').value = '';
   document.getElementById('setup-agency').value = 'federal';
   document.getElementById('setup-service-type').value = 'clerical';
   document.getElementById('setup-unit').value = '';
@@ -7015,6 +7067,201 @@ function deleteInventoryItem(id) {
   saveState();
   renderInventory();
   updateInventoryBadge();
+}
+
+// ══════════ SHIFT TICKET (OF-297, heli/comms units) ══════════
+// Season-constant agreement numbers by unit type (update yearly if they change).
+const SHIFT_TICKET_AGREEMENTS = {
+  heli:  '12024B26T7084-P00001',
+  comms: '12024B24T7051',
+};
+const SHIFT_TICKET_CONTRACTOR = 'Nomadic Clerical Support';
+
+function getAgreementNumber(inc) {
+  const t = inc && inc.serviceType || '';
+  if (t.indexOf('heli') === 0) return SHIFT_TICKET_AGREEMENTS.heli;
+  if (t.indexOf('comms') === 0) return SHIFT_TICKET_AGREEMENTS.comms;
+  return '';
+}
+function getShiftTicketUnit(inc) {
+  if (!inc || !inc.unit) return null;
+  return _unitsCache.find(u => u.name === inc.unit) || null;
+}
+function getShiftTicketDates(entry) {
+  return [...new Set(entry.approvedDates || [])].sort();
+}
+
+function openShiftTicketModal() {
+  const inc = state.incident;
+  const entry = state._incidents.find(e => e.id === state._activeId);
+  if (!inc || !entry) return;
+  const unit = getShiftTicketUnit(inc);
+  const staff = (inc.staffNames || []);
+  document.getElementById('st-operator').value = staff[0] || '';
+  document.getElementById('st-posted-by').value = '';
+  document.getElementById('st-status').value = '';
+  document.getElementById('st-remarks').value = '';
+  const eq = unit
+    ? `${escHtml(unit.make || '—')} ${escHtml(unit.model || '')} · Serial ${escHtml(unit.vin || '—')} · Plate ${escHtml(unit.plate || '—')}`
+    : '<span style="color:#c0392b">No Fleet record found for unit “' + escHtml(inc.unit || '') + '” — add it in the Fleet tab so equipment fields fill in.</span>';
+  document.getElementById('shift-ticket-autofill').innerHTML =
+    `<strong>Auto-filled from this incident &amp; Fleet:</strong><br>` +
+    `Agreement #: ${escHtml(getAgreementNumber(inc) || '—')} &nbsp;·&nbsp; Contractor: ${SHIFT_TICKET_CONTRACTOR}<br>` +
+    `Incident: ${escHtml(inc.name || '—')} &nbsp;·&nbsp; Incident #: ${escHtml(inc.incidentNumber || '—')} &nbsp;·&nbsp; Resource Order #: ${escHtml(inc.eNumber || '—')}<br>` +
+    `Equipment: ${eq}`;
+  renderShiftTicketBlocks();
+  document.getElementById('shift-ticket-modal').style.display = 'flex';
+}
+function closeShiftTicketModal() {
+  document.getElementById('shift-ticket-modal').style.display = 'none';
+}
+
+function renderShiftTicketBlocks() {
+  const entry = state._incidents.find(e => e.id === state._activeId);
+  const el = document.getElementById('shift-ticket-blocks');
+  if (!entry) { el.innerHTML = ''; return; }
+  const dates = getShiftTicketDates(entry);
+  if (!dates.length) {
+    el.innerHTML = '<div style="font-size:13px;color:var(--gray-400);font-style:italic">No approved days yet. Use “✓ Approve Day” on the Daily Log for each day worked, then generate the ticket.</div>';
+    return;
+  }
+  const per = parseInt(document.getElementById('st-days-per').value) || 5;
+  let html = '';
+  for (let i = 0; i < dates.length; i += per) {
+    const block = dates.slice(i, i + per);
+    const label = block.length === 1 ? formatDate(block[0]) : formatDate(block[0]) + ' – ' + formatDate(block[block.length - 1]);
+    html += `<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 4px;border-bottom:1px solid var(--gray-100)">
+      <div><div style="font-weight:600;font-size:13px;color:var(--navy)">${label}</div><div style="font-size:11px;color:var(--gray-400)">${block.length} day${block.length!==1?'s':''}</div></div>
+      <button class="btn btn-primary btn-sm" onclick="generateShiftTicket(${i}, ${per})">Generate →</button>
+    </div>`;
+  }
+  el.innerHTML = html;
+}
+
+function generateShiftTicket(startIndex, per) {
+  const inc = state.incident;
+  const entry = state._incidents.find(e => e.id === state._activeId);
+  if (!inc || !entry) return;
+  const allDates = getShiftTicketDates(entry);
+  const dates = allDates.slice(startIndex, startIndex + per);
+  const unit = getShiftTicketUnit(inc);
+  const opts = {
+    operator: document.getElementById('st-operator').value.trim(),
+    postedBy: document.getElementById('st-posted-by').value.trim(),
+    status: document.getElementById('st-status').value,
+    remarks: document.getElementById('st-remarks').value.trim(),
+  };
+  const win = window.open('', '_blank');
+  if (!win) { alert('Pop-ups are blocked. Please allow pop-ups to generate the shift ticket.'); return; }
+  win.document.write(buildShiftTicketHTML(inc, unit, dates, opts));
+  win.document.close();
+  win.focus();
+}
+
+function buildShiftTicketHTML(inc, unit, dates, opts) {
+  const esc = escHtml;
+  const agreement = getAgreementNumber(inc);
+  const mdy = d => { if (!d) return ''; const p = d.split('-'); return p[1] + '/' + p[2] + '/' + p[0].slice(2); };
+  const chk = on => on ? '☒' : '☐';
+  const st = opts.status || '';
+  // Equipment-use rows: one per approved day, WORK = 1, DAYS circled. Pad to 5 rows.
+  const MINROWS = 5;
+  let useRows = '';
+  const total = Math.max(MINROWS, dates.length);
+  for (let i = 0; i < total; i++) {
+    const d = dates[i];
+    useRows += `<tr>
+      <td class="c">${d ? mdy(d) : '&nbsp;'}</td><td></td><td></td><td class="c">${d ? '1' : ''}</td><td></td>
+    </tr>`;
+  }
+  const rangeLabel = dates.length ? (dates.length === 1 ? formatDate(dates[0]) : formatDate(dates[0]) + ' to ' + formatDate(dates[dates.length-1])) : '';
+  const fileTitle = `ShiftTicket_${(inc.eNumber||'').replace(/[^A-Za-z0-9]/g,'')}_${(dates[0]||'').replace(/-/g,'')}`;
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(fileTitle)}</title><style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Arial,Helvetica,sans-serif;color:#000;padding:16px;font-size:11px}
+.of297{border:1.5px solid #000;width:100%;max-width:760px;margin:0 auto}
+.hdr{display:flex;border-bottom:1.5px solid #000}
+.hdr .title{flex:1;font-weight:bold;font-size:15px;padding:7px 8px}
+.hdr .ro{width:200px;border-left:1px solid #000;padding:5px 8px;font-size:10px}
+.hdr .ro b{font-size:13px}
+.note{font-style:italic;font-size:9.5px;padding:3px 8px;border-bottom:1.5px solid #000}
+.row{display:flex;border-bottom:1px solid #000}
+.row:last-of-type{border-bottom:none}
+.cell{padding:4px 8px;border-right:1px solid #000;min-height:38px}
+.cell:last-child{border-right:none}
+.fl{display:block;font-size:9px;font-weight:bold}
+.fv{display:block;font-size:12px;padding-top:3px}
+.furn{display:flex;gap:18px;padding-top:5px;font-size:11px}
+.lower{display:flex;border-top:1.5px solid #000}
+.euse{width:58%;border-right:1.5px solid #000}
+.euse table{border-collapse:collapse;width:100%}
+.euse th,.euse td{border:1px solid #000;font-size:9px;padding:2px 3px;text-align:center;height:22px}
+.euse .useh{font-size:9px;font-weight:bold;border:none;border-bottom:1px solid #000;padding:3px}
+.euse td.c{font-size:11px}
+.right{width:42%}
+.rcell{padding:4px 8px;border-bottom:1px solid #000}
+.rcell .fl{font-size:9px;font-weight:bold}
+.status div{padding:2px 0;font-size:11px}
+.sig{display:flex;border-top:1.5px solid #000}
+.sig .cell{min-height:44px}
+.sig .s1{flex:1}.sig .s2{flex:1}.sig .s3{width:150px}
+.foot{display:flex;justify-content:space-between;font-size:9px;padding:4px 8px}
+@media print{body{padding:0} button{display:none} @page{margin:12mm}}
+.pbar{max-width:760px;margin:12px auto 0;text-align:right}
+.pbar button{font-family:Arial;font-size:13px;padding:8px 16px;cursor:pointer}
+</style></head><body>
+<div class="of297">
+  <div class="hdr">
+    <div class="title">EMERGENCY EQUIPMENT SHIFT TICKET</div>
+    <div class="ro">RESOURCE ORDER #<br><b>${esc(inc.eNumber || '')}</b></div>
+  </div>
+  <div class="note">NOTE: The responsible Government Officer will update this form each day or shift and make initial and final equipment inspections.</div>
+  <div class="row">
+    <div class="cell" style="flex:1"><span class="fl">1. AGREEMENT NUMBER</span><span class="fv">${esc(agreement)}</span></div>
+    <div class="cell" style="flex:1"><span class="fl">2. CONTRACTOR (name)</span><span class="fv">${esc(SHIFT_TICKET_CONTRACTOR)}</span></div>
+  </div>
+  <div class="row">
+    <div class="cell" style="flex:1"><span class="fl">3. INCIDENT OR PROJECT NAME</span><span class="fv">${esc(inc.name || '')}</span></div>
+    <div class="cell" style="width:150px"><span class="fl">4. INCIDENT NUMBER</span><span class="fv">${esc(inc.incidentNumber || '')}</span></div>
+    <div class="cell" style="flex:1"><span class="fl">5. OPERATOR (name)</span><span class="fv">${esc(opts.operator || '')}</span></div>
+  </div>
+  <div class="row">
+    <div class="cell" style="flex:1"><span class="fl">6. EQUIPMENT MAKE</span><span class="fv">${esc(unit && unit.make || '')}</span></div>
+    <div class="cell" style="width:150px"><span class="fl">7. EQUIPMENT MODEL</span><span class="fv">${esc(unit && unit.model || '')}</span></div>
+    <div class="cell" style="flex:1"><span class="fl">8. OPERATOR FURNISHED BY</span><span class="furn">${chk(true)} Contractor &nbsp; ${chk(false)} Government</span></div>
+  </div>
+  <div class="row">
+    <div class="cell" style="flex:1"><span class="fl">9. SERIAL NUMBER</span><span class="fv">${esc(unit && unit.vin || '')}</span></div>
+    <div class="cell" style="width:150px"><span class="fl">10. LICENSE NUMBER</span><span class="fv">${esc(unit && unit.plate || '')}</span></div>
+    <div class="cell" style="flex:1"><span class="fl">11. OPERATING SUPPLIES FURNISHED BY</span><span class="furn">${chk(true)} Contractor &nbsp; ${chk(false)} Government</span></div>
+  </div>
+  <div class="lower">
+    <div class="euse">
+      <div class="useh">12. DATE (MO/DA/YR) &nbsp;&nbsp; 13. EQUIPMENT USE — HRS / <u><b>DAYS</b></u> / MILES (circle one)</div>
+      <table>
+        <tr><th style="width:22%">DATE</th><th>START</th><th>STOP</th><th>WORK</th><th>SPECIAL</th></tr>
+        ${useRows}
+      </table>
+    </div>
+    <div class="right">
+      <div class="rcell" style="min-height:70px"><span class="fl">14. REMARKS (released, down time and cause, problems, etc)</span><span class="fv">${esc(opts.remarks || '')}</span></div>
+      <div class="rcell status"><span class="fl">15. EQUIPMENT STATUS</span>
+        <div>${chk(st==='a')} a. Inspected and under agreement</div>
+        <div>${chk(st==='b')} b. Released by Government</div>
+        <div>${chk(st==='c')} c. Withdrawn by Contractor</div>
+      </div>
+      <div class="rcell" style="border-bottom:none"><span class="fl">16. INVOICE POSTED BY (Recorder's Initials)</span><span class="fv">${esc(opts.postedBy || '')}</span></div>
+    </div>
+  </div>
+  <div class="sig">
+    <div class="cell s1"><span class="fl">17. CONTRACTOR'S OR AUTHORIZED AGENT'S SIGNATURE</span></div>
+    <div class="cell s2"><span class="fl">18. GOVERNMENT OFFICER'S SIGNATURE</span></div>
+    <div class="cell s3"><span class="fl">19. DATE SIGNED</span></div>
+  </div>
+  <div class="foot"><span>NSN 7540-01-119-5628 &nbsp; 50297-102</span><span>OPTIONAL FORM 297 (Rev. 7-90) &nbsp; USDA/USDI</span></div>
+</div>
+<div class="pbar"><button onclick="window.print()">🖨 Print / Save as PDF</button></div>
+</body></html>`;
 }
 </script>
 </body>
