@@ -1814,23 +1814,14 @@ body {
     </div>
     <div class="modal-body">
       <div id="shift-ticket-autofill" style="background:var(--off-white);border-radius:var(--radius);padding:12px 14px;margin-bottom:16px;font-size:12px;color:var(--gray-600);line-height:1.7"></div>
-      <div class="form-grid" style="margin-bottom:14px">
-        <div class="form-group"><label>Operator Name</label><input type="text" id="st-operator" placeholder="Unit operator"></div>
-        <div class="form-group"><label>Invoice Posted By (initials)</label><input type="text" id="st-posted-by" placeholder="e.g. SB"></div>
-      </div>
       <div class="form-group" style="margin-bottom:14px">
-        <label>Equipment Status</label>
-        <select id="st-status">
-          <option value="">— none —</option>
-          <option value="a">a. Inspected and under agreement</option>
-          <option value="b">b. Released by Government</option>
-          <option value="c">c. Withdrawn by Contractor</option>
-        </select>
+        <label>Operator Name</label><input type="text" id="st-operator" placeholder="Unit operator">
       </div>
       <div class="form-group" style="margin-bottom:16px">
         <label>Remarks (optional)</label>
         <textarea id="st-remarks" rows="2" style="width:100%;padding:8px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:13px;font-family:inherit;resize:vertical"></textarea>
       </div>
+      <div style="font-size:12px;color:var(--gray-500);margin-bottom:12px">Equipment Status (15) and Invoice Posted By (16) are left blank for the government officer to complete.</div>
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
         <label style="font-size:13px;font-weight:600;color:var(--navy)">Days per ticket:</label>
         <select id="st-days-per" onchange="renderShiftTicketBlocks()" style="padding:5px 10px;border:1px solid var(--gray-200);border-radius:6px;font-size:13px">
@@ -1838,8 +1829,8 @@ body {
           <option value="1">1 day</option>
         </select>
       </div>
-      <div class="section-label" style="margin-top:4px">Approved Days</div>
-      <div id="shift-ticket-blocks" style="max-height:240px;overflow-y:auto"></div>
+      <div class="section-label" style="margin-top:4px">Shift Days — mark travel/standby as Special</div>
+      <div id="shift-ticket-blocks" style="max-height:260px;overflow-y:auto"></div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="closeShiftTicketModal()">Close</button>
@@ -7075,7 +7066,8 @@ const SHIFT_TICKET_AGREEMENTS = {
   heli:  '12024B26T7084-P00001',
   comms: '12024B24T7051',
 };
-const SHIFT_TICKET_CONTRACTOR = 'Nomadic Clerical Support';
+const SHIFT_TICKET_CONTRACTOR = 'Nomadic Land Camps, LLC';
+const SHIFT_TICKET_SIGNATURE = 'Sarah Bobbe';
 
 function getAgreementNumber(inc) {
   const t = inc && inc.serviceType || '';
@@ -7087,8 +7079,24 @@ function getShiftTicketUnit(inc) {
   if (!inc || !inc.unit) return null;
   return _unitsCache.find(u => u.name === inc.unit) || null;
 }
+function listConsecutiveDates(start, end) {
+  const out = [];
+  if (!start) return out;
+  let cur = start, guard = 0;
+  while (cur <= end && guard < 200) { out.push(cur); cur = shiftDateStr(cur, 1); guard++; }
+  return out;
+}
+// Shift-ticket days run consecutively from the incident's start date through the
+// later of today or the last approved day, so the first row is always the first
+// day of the incident.
 function getShiftTicketDates(entry) {
-  return [...new Set(entry.approvedDates || [])].sort();
+  const inc = entry.incident || {};
+  const approved = [...new Set(entry.approvedDates || [])].sort();
+  const start = inc.startDate || approved[0];
+  if (!start) return approved;
+  const last = approved.length ? approved[approved.length - 1] : start;
+  const end = [start, last, todayStr()].sort().pop(); // latest of the three
+  return listConsecutiveDates(start, end);
 }
 
 function openShiftTicketModal() {
@@ -7098,8 +7106,6 @@ function openShiftTicketModal() {
   const unit = getShiftTicketUnit(inc);
   const staff = (inc.staffNames || []);
   document.getElementById('st-operator').value = staff[0] || '';
-  document.getElementById('st-posted-by').value = '';
-  document.getElementById('st-status').value = '';
   document.getElementById('st-remarks').value = '';
   const eq = unit
     ? `${escHtml(unit.make || '—')} ${escHtml(unit.model || '')} · Serial ${escHtml(unit.vin || '—')} · Plate ${escHtml(unit.plate || '—')}`
@@ -7122,20 +7128,42 @@ function renderShiftTicketBlocks() {
   if (!entry) { el.innerHTML = ''; return; }
   const dates = getShiftTicketDates(entry);
   if (!dates.length) {
-    el.innerHTML = '<div style="font-size:13px;color:var(--gray-400);font-style:italic">No approved days yet. Use “✓ Approve Day” on the Daily Log for each day worked, then generate the ticket.</div>';
+    el.innerHTML = '<div style="font-size:13px;color:var(--gray-400);font-style:italic">Set a deployment start date in the incident Setup to generate shift tickets.</div>';
     return;
   }
+  const uses = entry.shiftUse || {};
   const per = parseInt(document.getElementById('st-days-per').value) || 5;
   let html = '';
   for (let i = 0; i < dates.length; i += per) {
     const block = dates.slice(i, i + per);
     const label = block.length === 1 ? formatDate(block[0]) : formatDate(block[0]) + ' – ' + formatDate(block[block.length - 1]);
-    html += `<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 4px;border-bottom:1px solid var(--gray-100)">
-      <div><div style="font-weight:600;font-size:13px;color:var(--navy)">${label}</div><div style="font-size:11px;color:var(--gray-400)">${block.length} day${block.length!==1?'s':''}</div></div>
-      <button class="btn btn-primary btn-sm" onclick="generateShiftTicket(${i}, ${per})">Generate →</button>
+    html += `<div style="border:1px solid var(--gray-200);border-radius:var(--radius);padding:10px 12px;margin-bottom:10px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <div style="font-weight:600;font-size:13px;color:var(--navy)">${label} <span style="font-weight:400;color:var(--gray-400);font-size:11px">(${block.length} day${block.length!==1?'s':''})</span></div>
+        <button class="btn btn-primary btn-sm" onclick="generateShiftTicket(${i}, ${per})">Generate →</button>
+      </div>
+      ${block.map(d => {
+        const v = uses[d] === 'special' ? 'special' : 'work';
+        return `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:3px 0;font-size:12px">
+          <span>${formatDate(d)}</span>
+          <select onchange="setShiftUse('${d}',this.value)" style="font-size:12px;padding:3px 6px;border:1px solid var(--gray-200);border-radius:5px">
+            <option value="work" ${v==='work'?'selected':''}>Work</option>
+            <option value="special" ${v==='special'?'selected':''}>Special (travel/standby)</option>
+          </select>
+        </div>`;
+      }).join('')}
     </div>`;
   }
   el.innerHTML = html;
+}
+
+function setShiftUse(date, val) {
+  const entry = state._incidents.find(e => e.id === state._activeId);
+  if (!entry) return;
+  if (!entry.shiftUse) entry.shiftUse = {};
+  if (val === 'special') entry.shiftUse[date] = 'special';
+  else delete entry.shiftUse[date]; // 'work' is the default — no need to store
+  saveState();
 }
 
 function generateShiftTicket(startIndex, per) {
@@ -7147,9 +7175,8 @@ function generateShiftTicket(startIndex, per) {
   const unit = getShiftTicketUnit(inc);
   const opts = {
     operator: document.getElementById('st-operator').value.trim(),
-    postedBy: document.getElementById('st-posted-by').value.trim(),
-    status: document.getElementById('st-status').value,
     remarks: document.getElementById('st-remarks').value.trim(),
+    uses: entry.shiftUse || {},
   };
   const win = window.open('', '_blank');
   if (!win) { alert('Pop-ups are blocked. Please allow pop-ups to generate the shift ticket.'); return; }
@@ -7163,15 +7190,17 @@ function buildShiftTicketHTML(inc, unit, dates, opts) {
   const agreement = getAgreementNumber(inc);
   const mdy = d => { if (!d) return ''; const p = d.split('-'); return p[1] + '/' + p[2] + '/' + p[0].slice(2); };
   const chk = on => on ? '☒' : '☐';
-  const st = opts.status || '';
-  // Equipment-use rows: one per approved day, WORK = 1, DAYS circled. Pad to 5 rows.
+  const uses = opts.uses || {};
+  // Equipment-use rows: one per day. 24-hr shift = "1" under WORK, or under
+  // SPECIAL when the day is marked special (travel/standby). Pad to 5 rows.
   const MINROWS = 5;
   let useRows = '';
   const total = Math.max(MINROWS, dates.length);
   for (let i = 0; i < total; i++) {
     const d = dates[i];
+    const special = d && uses[d] === 'special';
     useRows += `<tr>
-      <td class="c">${d ? mdy(d) : '&nbsp;'}</td><td></td><td></td><td class="c">${d ? '1' : ''}</td><td></td>
+      <td class="c">${d ? mdy(d) : '&nbsp;'}</td><td></td><td></td><td class="c">${d && !special ? '1' : ''}</td><td class="c">${special ? '1' : ''}</td>
     </tr>`;
   }
   const rangeLabel = dates.length ? (dates.length === 1 ? formatDate(dates[0]) : formatDate(dates[0]) + ' to ' + formatDate(dates[dates.length-1])) : '';
@@ -7202,9 +7231,11 @@ body{font-family:Arial,Helvetica,sans-serif;color:#000;padding:16px;font-size:11
 .rcell{padding:4px 8px;border-bottom:1px solid #000}
 .rcell .fl{font-size:9px;font-weight:bold}
 .status div{padding:2px 0;font-size:11px}
+.circle{display:inline-block;border:1.3px solid #000;border-radius:50%;padding:0 6px;line-height:1.2}
 .sig{display:flex;border-top:1.5px solid #000}
 .sig .cell{min-height:44px}
 .sig .s1{flex:1}.sig .s2{flex:1}.sig .s3{width:150px}
+.signame{display:block;font-family:'Segoe Script','Brush Script MT','Comic Sans MS',cursive;font-size:20px;padding-top:8px}
 .foot{display:flex;justify-content:space-between;font-size:9px;padding:4px 8px}
 @media print{body{padding:0} button{display:none} @page{margin:12mm}}
 .pbar{max-width:760px;margin:12px auto 0;text-align:right}
@@ -7237,7 +7268,7 @@ body{font-family:Arial,Helvetica,sans-serif;color:#000;padding:16px;font-size:11
   </div>
   <div class="lower">
     <div class="euse">
-      <div class="useh">12. DATE (MO/DA/YR) &nbsp;&nbsp; 13. EQUIPMENT USE — HRS / <u><b>DAYS</b></u> / MILES (circle one)</div>
+      <div class="useh">12. DATE (MO/DA/YR) &nbsp;&nbsp; 13. EQUIPMENT USE — HRS / <span class="circle">DAYS</span> / MILES (circle one)</div>
       <table>
         <tr><th style="width:22%">DATE</th><th>START</th><th>STOP</th><th>WORK</th><th>SPECIAL</th></tr>
         ${useRows}
@@ -7246,15 +7277,15 @@ body{font-family:Arial,Helvetica,sans-serif;color:#000;padding:16px;font-size:11
     <div class="right">
       <div class="rcell" style="min-height:70px"><span class="fl">14. REMARKS (released, down time and cause, problems, etc)</span><span class="fv">${esc(opts.remarks || '')}</span></div>
       <div class="rcell status"><span class="fl">15. EQUIPMENT STATUS</span>
-        <div>${chk(st==='a')} a. Inspected and under agreement</div>
-        <div>${chk(st==='b')} b. Released by Government</div>
-        <div>${chk(st==='c')} c. Withdrawn by Contractor</div>
+        <div>${chk(false)} a. Inspected and under agreement</div>
+        <div>${chk(false)} b. Released by Government</div>
+        <div>${chk(false)} c. Withdrawn by Contractor</div>
       </div>
-      <div class="rcell" style="border-bottom:none"><span class="fl">16. INVOICE POSTED BY (Recorder's Initials)</span><span class="fv">${esc(opts.postedBy || '')}</span></div>
+      <div class="rcell" style="border-bottom:none"><span class="fl">16. INVOICE POSTED BY (Recorder's Initials)</span><span class="fv">&nbsp;</span></div>
     </div>
   </div>
   <div class="sig">
-    <div class="cell s1"><span class="fl">17. CONTRACTOR'S OR AUTHORIZED AGENT'S SIGNATURE</span></div>
+    <div class="cell s1"><span class="fl">17. CONTRACTOR'S OR AUTHORIZED AGENT'S SIGNATURE</span><span class="signame">${esc(SHIFT_TICKET_SIGNATURE)}</span></div>
     <div class="cell s2"><span class="fl">18. GOVERNMENT OFFICER'S SIGNATURE</span></div>
     <div class="cell s3"><span class="fl">19. DATE SIGNED</span></div>
   </div>
