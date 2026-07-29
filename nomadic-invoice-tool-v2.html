@@ -2425,9 +2425,12 @@ async function loadFromSupabase() {
   const baseQueries = [
     _sb.from('incidents').select('*').order('updated_at', { ascending: true }),
     _sb.from('app_config').select('*').eq('key', 'rates').maybeSingle(),
+    // Units load for everyone, not just admins: staff need the equipment
+    // make/model/serial/plate to generate shift tickets. The Fleet *screen*
+    // stays admin-only — this is just the reference data behind it.
+    _sb.from('units').select('*').order('name'),
   ];
   const adminQueries = state.isAdmin ? [
-    _sb.from('units').select('*').order('name'),
     _sb.from('app_config').select('value').eq('key', 'employee_profiles').maybeSingle(),
     _sb.from('app_config').select('value').eq('key', 'employee_roster').maybeSingle(),
   ] : [];
@@ -7102,9 +7105,16 @@ function openShiftTicketModal() {
   const unit = getShiftTicketUnit(inc);
   const staff = (inc.staffNames || []);
   document.getElementById('st-operator').value = staff[0] || '';
-  const eq = unit
-    ? `${escHtml(unit.make || '—')} ${escHtml(unit.model || '')} · Serial ${escHtml(unit.vin || '—')} · Plate ${escHtml(unit.license_plate || '—')}`
-    : '<span style="color:#c0392b">No Fleet record found for unit “' + escHtml(inc.unit || '') + '” — add it in the Fleet tab so equipment fields fill in.</span>';
+  let eq;
+  if (unit) {
+    eq = `${escHtml(unit.make || '—')} ${escHtml(unit.model || '')} · Serial ${escHtml(unit.vin || '—')} · Plate ${escHtml(unit.license_plate || '—')}`;
+  } else if (!_unitsCache.length) {
+    // Nothing loaded at all — usually a permissions problem reading the units
+    // table, not a missing record. Distinguishing the two saves a support call.
+    eq = '<span style="color:#c0392b">Could not load fleet data on this device — equipment fields (6, 7, 9, 10) will be blank. Ask your admin to check unit read access.</span>';
+  } else {
+    eq = '<span style="color:#c0392b">No fleet record for unit “' + escHtml(inc.unit || '') + '” — add it on the Fleet tab so equipment fields fill in.</span>';
+  }
   document.getElementById('shift-ticket-autofill').innerHTML =
     `<strong>Auto-filled from this incident &amp; Fleet:</strong><br>` +
     `Agreement #: ${escHtml(getAgreementNumber(inc) || '—')} &nbsp;·&nbsp; Contractor: ${SHIFT_TICKET_CONTRACTOR}<br>` +
