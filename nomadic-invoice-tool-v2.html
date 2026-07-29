@@ -7103,7 +7103,7 @@ function openShiftTicketModal() {
   const staff = (inc.staffNames || []);
   document.getElementById('st-operator').value = staff[0] || '';
   const eq = unit
-    ? `${escHtml(unit.make || '—')} ${escHtml(unit.model || '')} · Serial ${escHtml(unit.vin || '—')} · Plate ${escHtml(unit.plate || '—')}`
+    ? `${escHtml(unit.make || '—')} ${escHtml(unit.model || '')} · Serial ${escHtml(unit.vin || '—')} · Plate ${escHtml(unit.license_plate || '—')}`
     : '<span style="color:#c0392b">No Fleet record found for unit “' + escHtml(inc.unit || '') + '” — add it in the Fleet tab so equipment fields fill in.</span>';
   document.getElementById('shift-ticket-autofill').innerHTML =
     `<strong>Auto-filled from this incident &amp; Fleet:</strong><br>` +
@@ -7257,7 +7257,7 @@ body{font-family:Arial,Helvetica,sans-serif;color:#000;padding:16px;font-size:11
   </div>
   <div class="row">
     <div class="cell" style="flex:1"><span class="fl">9. SERIAL NUMBER</span><span class="fv">${esc(unit && unit.vin || '')}</span></div>
-    <div class="cell" style="width:150px"><span class="fl">10. LICENSE NUMBER</span><span class="fv">${esc(unit && unit.plate || '')}</span></div>
+    <div class="cell" style="width:150px"><span class="fl">10. LICENSE NUMBER</span><span class="fv">${esc(unit && unit.license_plate || '')}</span></div>
     <div class="cell" style="flex:1"><span class="fl">11. OPERATING SUPPLIES FURNISHED BY</span><span class="furn">${chk(true)} Contractor &nbsp; ${chk(false)} Government</span></div>
   </div>
   <div class="lower">
