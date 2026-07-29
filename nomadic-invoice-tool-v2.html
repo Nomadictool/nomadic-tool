@@ -1814,14 +1814,10 @@ body {
     </div>
     <div class="modal-body">
       <div id="shift-ticket-autofill" style="background:var(--off-white);border-radius:var(--radius);padding:12px 14px;margin-bottom:16px;font-size:12px;color:var(--gray-600);line-height:1.7"></div>
-      <div class="form-group" style="margin-bottom:14px">
+      <div class="form-group" style="margin-bottom:16px">
         <label>Operator Name</label><input type="text" id="st-operator" placeholder="Unit operator">
       </div>
-      <div class="form-group" style="margin-bottom:16px">
-        <label>Remarks (optional)</label>
-        <textarea id="st-remarks" rows="2" style="width:100%;padding:8px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:13px;font-family:inherit;resize:vertical"></textarea>
-      </div>
-      <div style="font-size:12px;color:var(--gray-500);margin-bottom:12px">Equipment Status (15) and Invoice Posted By (16) are left blank for the government officer to complete.</div>
+      <div style="font-size:12px;color:var(--gray-500);margin-bottom:12px">Remarks (14), Equipment Status (15), and Invoice Posted By (16) are left blank for the government officer to complete.</div>
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
         <label style="font-size:13px;font-weight:600;color:var(--navy)">Days per ticket:</label>
         <select id="st-days-per" onchange="renderShiftTicketBlocks()" style="padding:5px 10px;border:1px solid var(--gray-200);border-radius:6px;font-size:13px">
@@ -7106,7 +7102,6 @@ function openShiftTicketModal() {
   const unit = getShiftTicketUnit(inc);
   const staff = (inc.staffNames || []);
   document.getElementById('st-operator').value = staff[0] || '';
-  document.getElementById('st-remarks').value = '';
   const eq = unit
     ? `${escHtml(unit.make || '—')} ${escHtml(unit.model || '')} · Serial ${escHtml(unit.vin || '—')} · Plate ${escHtml(unit.plate || '—')}`
     : '<span style="color:#c0392b">No Fleet record found for unit “' + escHtml(inc.unit || '') + '” — add it in the Fleet tab so equipment fields fill in.</span>';
@@ -7175,7 +7170,6 @@ function generateShiftTicket(startIndex, per) {
   const unit = getShiftTicketUnit(inc);
   const opts = {
     operator: document.getElementById('st-operator').value.trim(),
-    remarks: document.getElementById('st-remarks').value.trim(),
     uses: entry.shiftUse || {},
   };
   const win = window.open('', '_blank');
@@ -7275,7 +7269,7 @@ body{font-family:Arial,Helvetica,sans-serif;color:#000;padding:16px;font-size:11
       </table>
     </div>
     <div class="right">
-      <div class="rcell" style="min-height:70px"><span class="fl">14. REMARKS (released, down time and cause, problems, etc)</span><span class="fv">${esc(opts.remarks || '')}</span></div>
+      <div class="rcell" style="min-height:70px"><span class="fl">14. REMARKS (released, down time and cause, problems, etc)</span></div>
       <div class="rcell status"><span class="fl">15. EQUIPMENT STATUS</span>
         <div>${chk(false)} a. Inspected and under agreement</div>
         <div>${chk(false)} b. Released by Government</div>
