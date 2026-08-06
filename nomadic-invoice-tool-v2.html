@@ -1578,6 +1578,11 @@ body {
         <div class="form-group"><label>Dispatch Location — Forest Service</label><input type="text" id="unit-edit-dispatch-fs" placeholder="e.g. Plumas NF Dispatch"></div>
         <div class="form-group"><label>Dispatch Location — CalFire</label><input type="text" id="unit-edit-dispatch-cf" placeholder="e.g. TCU ECC"></div>
       </div>
+      <div class="form-group" style="margin-bottom:14px">
+        <label>Actual Location</label>
+        <input type="text" id="unit-edit-actual-location" placeholder="Town, address, or lat,long — where this unit physically sits">
+        <div style="font-size:11px;color:var(--gray-500);margin-top:4px">Where the unit is staged right now when it's not on a fire. This is what pins it on the Locations map.</div>
+      </div>
       <div class="form-grid" style="margin-bottom:14px">
         <div class="form-group" style="display:flex;align-items:center;gap:10px;padding-top:22px">
           <label class="toggle"><input type="checkbox" id="unit-edit-title-check"><span class="toggle-slider"></span></label>
@@ -6340,6 +6345,7 @@ function openUnitEdit(id) {
     document.getElementById('unit-edit-notes').value = u.notes || '';
     document.getElementById('unit-edit-dispatch-fs').value = u.dispatch_location_fs || '';
     document.getElementById('unit-edit-dispatch-cf').value = u.dispatch_location_cf || '';
+    document.getElementById('unit-edit-actual-location').value = u.actual_location || '';
     const noExp = u.reg_no_expiration || false;
     document.getElementById('unit-edit-no-exp').checked = noExp;
     document.getElementById('unit-edit-reg-exp').value = noExp ? '' : (u.reg_expiration || '');
@@ -6350,7 +6356,8 @@ function openUnitEdit(id) {
     ['unit-edit-type','unit-edit-year','unit-edit-make','unit-edit-model','unit-edit-vin',
      'unit-edit-plate','unit-edit-state','unit-edit-length','unit-edit-width',
      'unit-edit-dayrate','unit-edit-storage','unit-edit-notes',
-     'unit-edit-dispatch-fs','unit-edit-dispatch-cf','unit-edit-reg-exp'].forEach(k => { const el = document.getElementById(k); if (el) el.value = ''; });
+     'unit-edit-dispatch-fs','unit-edit-dispatch-cf','unit-edit-actual-location',
+     'unit-edit-reg-exp'].forEach(k => { const el = document.getElementById(k); if (el) el.value = ''; });
     nameEl.value = ''; nameEl.disabled = false;
     document.getElementById('unit-edit-title-check').checked = true;
     document.getElementById('unit-edit-status').value = 'available';
@@ -6388,6 +6395,7 @@ async function saveUnit() {
     notes: document.getElementById('unit-edit-notes').value.trim() || null,
     dispatch_location_fs: document.getElementById('unit-edit-dispatch-fs').value.trim() || null,
     dispatch_location_cf: document.getElementById('unit-edit-dispatch-cf').value.trim() || null,
+    actual_location: document.getElementById('unit-edit-actual-location').value.trim() || null,
     reg_no_expiration: document.getElementById('unit-edit-no-exp').checked,
     reg_expiration: document.getElementById('unit-edit-no-exp').checked ? null : (document.getElementById('unit-edit-reg-exp').value || null),
     updated_at: new Date().toISOString(),
@@ -7174,11 +7182,15 @@ function collectLocationPoints() {
   (_unitsCache || []).forEach(u => {
     if (onIncident.has(u.name)) return;              // already pinned at its fire
     if (u.manual_status === 'retired') return;
-    const q = (u.dispatch_location_fs || u.dispatch_location_cf || '').trim();
+    // Where the unit is actually staged wins; dispatch base is the fallback so
+    // units predating the Actual Location field still show up.
+    const actual = (u.actual_location || '').trim();
+    const q = actual || (u.dispatch_location_fs || u.dispatch_location_cf || '').trim();
     if (!q) return;
     dispatch.push({
       kind: 'dispatch', query: q,
       title: u.name, unit: u.name,
+      isActual: !!actual,
       status: u.manual_status || 'available',
       vehicle: [u.year, u.make, u.model].filter(Boolean).join(' '),
     });
@@ -7197,10 +7209,11 @@ function locPopupHtml(p) {
     </div>`;
   }
   return `<div style="font-family:'IBM Plex Sans',sans-serif;font-size:12px;line-height:1.6">
-    <div style="font-weight:700;font-size:13px">${escHtml(p.title)} <span style="font-weight:400;color:#666">— at base</span></div>
+    <div style="font-weight:700;font-size:13px">${escHtml(p.title)} <span style="font-weight:400;color:#666">— not on a fire</span></div>
     ${p.vehicle ? `<div>${escHtml(p.vehicle)}</div>` : ''}
     <div><b>Status:</b> ${escHtml(p.status)}</div>
     <div style="color:#666;margin-top:3px">${escHtml(p.label || p.query)}</div>
+    ${p.isActual ? '' : '<div style="color:#b45309;margin-top:3px">Dispatch base — no Actual Location set</div>'}
   </div>`;
 }
 
@@ -7268,7 +7281,7 @@ async function renderLocationsScreen(force) {
   const firePts = located.filter(p => p.kind === 'fire');
   legendEl.innerHTML =
     `<span><span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:#FF865E;border:2px solid #19322F;vertical-align:middle;margin-right:6px"></span>On incident (${firePts.length})</span>` +
-    `<span><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#9A9690;border:2px solid #19322F;vertical-align:middle;margin-right:6px"></span>At dispatch base (${located.length - firePts.length})</span>` +
+    `<span><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#9A9690;border:2px solid #19322F;vertical-align:middle;margin-right:6px"></span>Staged, not on a fire (${located.length - firePts.length})</span>` +
     `<span style="color:var(--gray-400)">Scroll-zoom is off — use + / − or drag.</span>`;
 
   if (unlocated.length) {
