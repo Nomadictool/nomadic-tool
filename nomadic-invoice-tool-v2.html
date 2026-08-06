@@ -758,6 +758,10 @@ body {
           <label>Deployment Start Date</label>
           <input type="date" id="setup-start-date">
         </div>
+        <div class="form-group">
+          <label>Location</label>
+          <input type="text" id="setup-location" placeholder="Town, address, or lat,long">
+        </div>
       </div>
       <div class="section-label">Service &amp; Unit</div>
       <div class="form-grid" style="margin-bottom:16px">
@@ -877,6 +881,7 @@ body {
   <button class="nav-btn" onclick="showScreen('season')" id="nav-season" style="display:none">📊 Season</button>
   <button class="nav-btn" onclick="showScreen('summary')" id="nav-summary" style="display:none">📋 Summary</button>
   <button class="nav-btn" onclick="showScreen('fleet')" id="nav-fleet" style="display:none">🚛 Fleet</button>
+  <button class="nav-btn" onclick="showScreen('locations')" id="nav-locations" style="display:none">📍 Locations</button>
 </nav>
 
 <main class="app-main">
@@ -1448,6 +1453,21 @@ body {
     <div id="expense-review-list"><!-- rendered by JS --></div>
   </div>
 
+
+  <!-- ══ LOCATIONS SCREEN (admin only) ══ -->
+  <div class="screen" id="screen-locations">
+    <div class="flex-between" style="margin-bottom:20px">
+      <div>
+        <h1 style="font-family:'Barlow Condensed',sans-serif;font-size:26px;font-weight:700">Locations</h1>
+        <p class="text-sm text-muted mt-8">Where every unit is right now, and how far apart they are.</p>
+      </div>
+      <button class="btn btn-outline btn-sm" onclick="renderLocationsScreen(true)">↻ Refresh</button>
+    </div>
+    <div id="locations-status" style="margin-bottom:14px"></div>
+    <div id="locations-map" style="height:440px;border-radius:var(--radius-lg);overflow:hidden;border:1px solid var(--gray-200);margin-bottom:12px;background:var(--gray-100)"></div>
+    <div id="locations-legend" style="display:flex;gap:18px;flex-wrap:wrap;font-size:12px;color:var(--gray-600);margin-bottom:22px"></div>
+    <div id="locations-distances"></div>
+  </div>
 
   <!-- ══ FLEET SCREEN ══ -->
   <div class="screen" id="screen-fleet">
@@ -2698,7 +2718,7 @@ function onLoginSuccess() {
   const wrapEl = document.getElementById('logged-in-as-display');
   if (nameEl) nameEl.textContent = state._session?.employee?.name || '—';
   if (wrapEl) wrapEl.style.display = 'flex';
-  const adminIds = ['manage-employees-btn', 'season-report-btn', 'nav-expense-review', 'nav-rates', 'nav-season', 'nav-summary', 'nav-fleet', 'manage-incidents-btn', 'day-total-box', 'help-admin-sections'];
+  const adminIds = ['manage-employees-btn', 'season-report-btn', 'nav-expense-review', 'nav-rates', 'nav-season', 'nav-summary', 'nav-fleet', 'nav-locations', 'manage-incidents-btn', 'day-total-box', 'help-admin-sections'];
   adminIds.forEach(elId => {
     const el = document.getElementById(elId);
     if (el) el.style.display = state.isAdmin ? '' : 'none';
@@ -3039,6 +3059,7 @@ function saveSetup() {
   const name = document.getElementById('setup-incident-name').value.trim();
   const eNumber = document.getElementById('setup-enumber').value.trim();
   const incidentNumber = document.getElementById('setup-incident-number').value.trim();
+  const incLocation = document.getElementById('setup-location').value.trim();
   const agency = document.getElementById('setup-agency').value;
   const startDate = document.getElementById('setup-start-date').value;
   const dayRate = parseFloat(document.getElementById('setup-day-rate').value) || (agency === 'calfire' ? 3455 : 1200);
@@ -3073,7 +3094,7 @@ function saveSetup() {
     ? [...document.querySelectorAll('.setup-employee-checkbox:checked')].map(c => c.value)
     : null;
 
-  const incData = { name, eNumber, incidentNumber, agency, startDate, dayRate, serviceType, unit, staffNames, addStaff, additionalStaff, perDiemEnabled, perDiemMealsRate, perDiemLodgingRate };
+  const incData = { name, eNumber, incidentNumber, location: incLocation, agency, startDate, dayRate, serviceType, unit, staffNames, addStaff, additionalStaff, perDiemEnabled, perDiemMealsRate, perDiemLodgingRate };
   if (existingEntry) {
     existingEntry.incident = incData;
   } else {
@@ -3113,6 +3134,7 @@ function showSetup() {
     document.getElementById('setup-incident-name').value = inc.name;
     document.getElementById('setup-enumber').value = inc.eNumber;
     document.getElementById('setup-incident-number').value = inc.incidentNumber || '';
+    document.getElementById('setup-location').value = inc.location || '';
     document.getElementById('setup-agency').value = inc.agency;
     document.getElementById('setup-start-date').value = inc.startDate;
     document.getElementById('setup-day-rate').value = inc.dayRate;
@@ -3245,6 +3267,7 @@ function showScreen(name) {
   if (name === 'expenses') loadMyExpenseReports();
   if (name === 'expense-review') loadExpenseReviewList();
   if (name === 'fleet') renderFleetScreen();
+  if (name === 'locations') renderLocationsScreen();
 }
 
 // ══════════ ORDER FORM ══════════
@@ -4424,6 +4447,7 @@ function startNewIncident() {
   document.getElementById('setup-incident-name').value = '';
   document.getElementById('setup-enumber').value = '';
   document.getElementById('setup-incident-number').value = '';
+  document.getElementById('setup-location').value = '';
   document.getElementById('setup-agency').value = 'federal';
   document.getElementById('setup-service-type').value = 'clerical';
   document.getElementById('setup-unit').value = '';
@@ -7057,6 +7081,243 @@ function deleteInventoryItem(id) {
   saveState();
   renderInventory();
   updateInventoryBadge();
+}
+
+// ══════════ LOCATIONS MAP (admin only) ══════════
+// Pins every unit: orange where it's working a fire, gray at its dispatch base.
+// Geocoded coordinates are cached in app_config so the routing API is only hit
+// for addresses we've never seen — keeps this fast and free on field internet.
+var _leafletLoading = null;
+var _locMap = null;
+var _geoCache = null;
+
+function loadLeaflet() {
+  if (window.L) return Promise.resolve();
+  if (_leafletLoading) return _leafletLoading;
+  _leafletLoading = new Promise(function(resolve, reject) {
+    var css = document.createElement('link');
+    css.rel = 'stylesheet';
+    css.href = 'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css';
+    document.head.appendChild(css);
+    var s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js';
+    s.onload = function() { resolve(); };
+    s.onerror = function() { _leafletLoading = null; reject(new Error('Could not load the map library — check your internet connection.')); };
+    document.head.appendChild(s);
+  });
+  return _leafletLoading;
+}
+
+async function loadGeoCache() {
+  if (_geoCache) return _geoCache;
+  try {
+    const { data } = await _sb.from('app_config').select('value').eq('key', 'geo_cache').maybeSingle();
+    _geoCache = (data && data.value) || {};
+  } catch (e) { _geoCache = {}; }
+  return _geoCache;
+}
+async function saveGeoCache() {
+  try { await _sb.from('app_config').upsert({ key: 'geo_cache', value: _geoCache }); } catch (e) {}
+}
+const geoKey = q => String(q || '').trim().toLowerCase();
+
+async function callGeoFn(payload) {
+  const { data: sess } = await _sb.auth.getSession();
+  let resp;
+  try {
+    resp = await fetch('/.netlify/functions/geo', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + (sess?.session?.access_token || '') },
+      body: JSON.stringify(payload),
+    });
+  } catch (e) {
+    throw new Error('Could not reach the mapping service — check your internet connection.');
+  }
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) throw new Error(data.error || ('Mapping request failed (' + resp.status + ').'));
+  return data;
+}
+
+// Resolve every query to coordinates, hitting the geocoder only for cache misses.
+async function geocodeQueries(queries) {
+  const cache = await loadGeoCache();
+  const missing = [...new Set(queries.map(geoKey))].filter(k => k && !cache[k]);
+  if (missing.length) {
+    const data = await callGeoFn({ action: 'geocode', queries: missing });
+    let added = false;
+    (data.results || []).forEach(r => {
+      if (r && typeof r.lat === 'number') { cache[geoKey(r.query)] = { lat: r.lat, lng: r.lng, label: r.label }; added = true; }
+    });
+    if (added) await saveGeoCache();
+  }
+  return cache;
+}
+
+// Fires (active incidents with a location) plus the dispatch base of every unit
+// that isn't currently on one.
+function collectLocationPoints() {
+  const fires = [], dispatch = [], onIncident = new Set();
+  state._incidents.forEach(e => {
+    if (!e.incident || e.archived) return;
+    const inc = e.incident;
+    if (inc.unit) onIncident.add(inc.unit);
+    const q = (inc.location || '').trim();
+    if (!q) return;
+    fires.push({
+      kind: 'fire', query: q,
+      title: inc.name || 'Unnamed Fire',
+      unit: inc.unit || '',
+      eNumber: inc.eNumber || '',
+      staff: (inc.staffNames || []).join(', '),
+    });
+  });
+  (_unitsCache || []).forEach(u => {
+    if (onIncident.has(u.name)) return;              // already pinned at its fire
+    if (u.manual_status === 'retired') return;
+    const q = (u.dispatch_location_fs || u.dispatch_location_cf || '').trim();
+    if (!q) return;
+    dispatch.push({
+      kind: 'dispatch', query: q,
+      title: u.name, unit: u.name,
+      status: u.manual_status || 'available',
+      vehicle: [u.year, u.make, u.model].filter(Boolean).join(' '),
+    });
+  });
+  return { fires, dispatch };
+}
+
+function locPopupHtml(p) {
+  if (p.kind === 'fire') {
+    return `<div style="font-family:'IBM Plex Sans',sans-serif;font-size:12px;line-height:1.6">
+      <div style="font-weight:700;font-size:13px">${escHtml(p.title)}</div>
+      ${p.eNumber ? `<div style="color:#666">${escHtml(p.eNumber)}</div>` : ''}
+      ${p.unit ? `<div><b>Unit:</b> ${escHtml(p.unit)}</div>` : ''}
+      ${p.staff ? `<div><b>Staff:</b> ${escHtml(p.staff)}</div>` : ''}
+      <div style="color:#666;margin-top:3px">${escHtml(p.label || p.query)}</div>
+    </div>`;
+  }
+  return `<div style="font-family:'IBM Plex Sans',sans-serif;font-size:12px;line-height:1.6">
+    <div style="font-weight:700;font-size:13px">${escHtml(p.title)} <span style="font-weight:400;color:#666">— at base</span></div>
+    ${p.vehicle ? `<div>${escHtml(p.vehicle)}</div>` : ''}
+    <div><b>Status:</b> ${escHtml(p.status)}</div>
+    <div style="color:#666;margin-top:3px">${escHtml(p.label || p.query)}</div>
+  </div>`;
+}
+
+async function renderLocationsScreen(force) {
+  if (!state.isAdmin) return;
+  const statusEl = document.getElementById('locations-status');
+  const legendEl = document.getElementById('locations-legend');
+  const distEl = document.getElementById('locations-distances');
+  if (!statusEl) return;
+  const note = (msg, kind) => {
+    const c = kind === 'error' ? { bg: '#fdecea', bd: '#f5c6cb', fg: '#7a1f1f' }
+            : kind === 'warn' ? { bg: '#fff8ee', bd: 'var(--amber)', fg: 'var(--amber-dim)' }
+            : { bg: 'var(--off-white)', bd: 'var(--gray-200)', fg: 'var(--gray-600)' };
+    statusEl.innerHTML = `<div style="background:${c.bg};border:1px solid ${c.bd};color:${c.fg};border-radius:var(--radius);padding:10px 14px;font-size:13px">${msg}</div>`;
+  };
+
+  if (force) { _geoCache = null; }
+  note('Loading map…');
+  legendEl.innerHTML = ''; distEl.innerHTML = '';
+
+  const { fires, dispatch } = collectLocationPoints();
+  const all = [...fires, ...dispatch];
+  if (!all.length) {
+    note('No locations to show yet. Add a <strong>Location</strong> to an active incident in its Setup, and dispatch locations to units on the Fleet tab.', 'warn');
+    return;
+  }
+
+  try { await loadLeaflet(); }
+  catch (err) { note(escHtml(err.message), 'error'); return; }
+
+  let cache;
+  try { cache = await geocodeQueries(all.map(p => p.query)); }
+  catch (err) { note(escHtml(err.message), 'error'); return; }
+
+  const located = [], unlocated = [];
+  all.forEach(p => {
+    const g = cache[geoKey(p.query)];
+    if (g) located.push(Object.assign({}, p, g)); else unlocated.push(p);
+  });
+  if (!located.length) {
+    note('None of the saved locations could be found on the map. Try a nearby town and state, e.g. “Redding, CA”.', 'error');
+    return;
+  }
+
+  // (Re)build the map
+  if (_locMap) { _locMap.remove(); _locMap = null; }
+  _locMap = L.map('locations-map', { scrollWheelZoom: false });
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; OpenStreetMap contributors', maxZoom: 18,
+  }).addTo(_locMap);
+  const bounds = [];
+  located.forEach(p => {
+    const isFire = p.kind === 'fire';
+    L.circleMarker([p.lat, p.lng], {
+      radius: isFire ? 10 : 7,
+      fillColor: isFire ? '#FF865E' : '#9A9690',
+      color: '#19322F', weight: 2, fillOpacity: 0.95,
+    }).addTo(_locMap).bindPopup(locPopupHtml(p));
+    bounds.push([p.lat, p.lng]);
+  });
+  if (bounds.length === 1) _locMap.setView(bounds[0], 9);
+  else _locMap.fitBounds(bounds, { padding: [34, 34] });
+  setTimeout(() => { if (_locMap) _locMap.invalidateSize(); }, 100);
+
+  const firePts = located.filter(p => p.kind === 'fire');
+  legendEl.innerHTML =
+    `<span><span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:#FF865E;border:2px solid #19322F;vertical-align:middle;margin-right:6px"></span>On incident (${firePts.length})</span>` +
+    `<span><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#9A9690;border:2px solid #19322F;vertical-align:middle;margin-right:6px"></span>At dispatch base (${located.length - firePts.length})</span>` +
+    `<span style="color:var(--gray-400)">Scroll-zoom is off — use + / − or drag.</span>`;
+
+  if (unlocated.length) {
+    note('Could not place: ' + unlocated.map(p => escHtml(p.title + ' (' + p.query + ')')).join(', ') + '. Try a town and state.', 'warn');
+  } else {
+    statusEl.innerHTML = '';
+  }
+
+  renderLocationDistances(firePts, distEl);
+}
+
+// Driving distance/time between the active fires — what the ops manager
+// actually drives between.
+async function renderLocationDistances(firePts, distEl) {
+  if (firePts.length < 2) {
+    distEl.innerHTML = '<div class="section-label">Drive Times</div><div style="font-size:13px;color:var(--gray-400);font-style:italic">Add a location to at least two active fires to see drive times between them.</div>';
+    return;
+  }
+  distEl.innerHTML = '<div class="section-label">Drive Times Between Fires</div><div style="font-size:13px;color:var(--gray-400)">Calculating…</div>';
+  let data;
+  try { data = await callGeoFn({ action: 'matrix', locations: firePts.map(p => [p.lng, p.lat]) }); }
+  catch (err) {
+    distEl.innerHTML = '<div class="section-label">Drive Times Between Fires</div><div style="font-size:13px;color:#c0392b">' + escHtml(err.message) + '</div>';
+    return;
+  }
+  const dist = data.distances || [], dur = data.durations || [];
+  const fmtDur = s => {
+    if (s == null) return '—';
+    const h = Math.floor(s / 3600), m = Math.round((s % 3600) / 60);
+    return h ? h + 'h ' + m + 'm' : m + 'm';
+  };
+  const th = t => `<th style="text-align:left;padding:7px 10px;border-bottom:2px solid var(--gray-200);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--gray-400)">${t}</th>`;
+  let html = '<div class="section-label">Drive Times Between Fires</div>'
+    + '<div class="card" style="padding:0;overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px;min-width:520px"><thead><tr>'
+    + th('From \\ To') + firePts.map(p => th(escHtml(p.title))).join('') + '</tr></thead><tbody>';
+  firePts.forEach((from, i) => {
+    html += `<tr><td style="padding:7px 10px;border-bottom:1px solid var(--gray-100);font-weight:600;color:var(--navy)">${escHtml(from.title)}</td>`;
+    firePts.forEach((to, j) => {
+      if (i === j) { html += '<td style="padding:7px 10px;border-bottom:1px solid var(--gray-100);text-align:center;color:var(--gray-300)">—</td>'; return; }
+      const mi = dist[i] && dist[i][j];
+      const sec = dur[i] && dur[i][j];
+      html += `<td style="padding:7px 10px;border-bottom:1px solid var(--gray-100);white-space:nowrap">
+        <span style="font-family:'IBM Plex Mono',monospace;font-weight:600">${mi == null ? '—' : Math.round(mi) + ' mi'}</span>
+        <span style="color:var(--gray-500)"> &middot; ${fmtDur(sec)}</span></td>`;
+    });
+    html += '</tr>';
+  });
+  html += '</tbody></table></div>';
+  distEl.innerHTML = html;
 }
 
 // ══════════ SHIFT TICKET (OF-297, heli/comms units) ══════════
