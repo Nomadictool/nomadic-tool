@@ -773,6 +773,7 @@ body {
             <option value="heli2">Helicopter Support — Type 2</option>
             <option value="comms1">Communications Unit — Type 1</option>
             <option value="comms2">Communications Unit — Type 2</option>
+            <option value="satellite">Satellite Internet Rental (Starlink)</option>
           </select>
         </div>
         <div class="form-group">
@@ -1211,7 +1212,7 @@ body {
                   <li>Click <strong>+ Add Order</strong> for each copy job: enter the <strong>Department</strong> (Operations, Finance, Plans…), a short <strong>Job Description</strong>, and the quantities — B&amp;W, color, laminate, plots (use the plot guide buttons), legal, or custom items.</li>
                   <li>Click <strong>Save Order</strong>. It appears in the day's list — click any row later to correct it.</li>
                   <li>Everything saves automatically — watch for the green <strong>⟳ SYNCED</strong> flash in the header. There is no save button to forget.</li>
-                  <li><strong>Helicopter / Communications units:</strong> your unit bills a flat day rate, so there are no orders to enter. Your entire daily job in this tool is one click — see the next section.</li>
+                  <li><strong>Helicopter / Communications / Satellite units:</strong> your unit bills a flat day rate, so there are no orders to enter. Your entire daily job in this tool is one click — see the next section.</li>
                 </ol>
               </div>
             </div>
@@ -1224,7 +1225,7 @@ body {
                 <ol>
                   <li>At the end of each day worked, click <strong>✓ Approve Day</strong> in the Daily Log. An approved day is what tells the company the day is <strong>billable</strong> — days that are never approved can fall out of the invoice totals.</li>
                   <li>Approve <em>every</em> day worked — even a slow day with zero copy jobs. If the unit was deployed, the day bills.</li>
-                  <li><strong>Helicopter / Communications units:</strong> this is your one required click per day. Don't skip it.</li>
+                  <li><strong>Helicopter / Communications / Satellite units:</strong> this is your one required click per day. Don't skip it.</li>
                   <li>Approved days get a green <strong>✓ Approved</strong> badge and lock — editing one asks for confirmation first.</li>
                   <li>Before demob, open the <strong>&#128203; Days</strong> panel and scan the whole deployment: every day worked should show <strong>Approved</strong>, no gaps.</li>
                 </ol>
@@ -2863,11 +2864,12 @@ async function initAppAfterLogin() {
 }
 
 const SERVICE_TYPE_DAY_RATES = {
-  clerical: null,   // uses agency rates config
-  heli1:    1250,
-  heli2:    1200,
-  comms1:   1250,
-  comms2:   1200,
+  clerical:  null,   // uses agency rates config
+  heli1:     1250,
+  heli2:     1200,
+  comms1:    1250,
+  comms2:    1200,
+  satellite: null,   // day rate typed in per incident until a standard rate is set
 };
 
 function onServiceTypeChange() {
@@ -2875,21 +2877,22 @@ function onServiceTypeChange() {
   const rate = SERVICE_TYPE_DAY_RATES[sel.value];
   if (rate !== null && rate !== undefined) {
     document.getElementById('setup-day-rate').value = rate;
-  } else {
+  } else if (sel.value === 'clerical') {
     // Clerical — reset to agency default
     const agency = document.getElementById('setup-agency').value;
     document.getElementById('setup-day-rate').value =
       agency === 'calfire' ? DEFAULT_RATES.calfire.dayRate : DEFAULT_RATES.standard.dayRate;
   }
+  // Satellite has no standard rate yet — leave whatever's typed in.
 }
 
 // Keep the suggested Day Rate in sync with the Agency Type for clerical units,
 // which bill at the agency's standard day rate (Heli/Comms units use a fixed
 // rate based on Service Type and aren't affected by Agency Type).
 function onAgencyChange() {
-  const serviceType = document.getElementById('setup-service-type').value;
-  const fixedRate = SERVICE_TYPE_DAY_RATES[serviceType];
-  if (fixedRate === null || fixedRate === undefined) {
+  // Only clerical units follow the agency day rate; every other service type
+  // carries its own rate (fixed, or typed in for satellite).
+  if (document.getElementById('setup-service-type').value === 'clerical') {
     const agency = document.getElementById('setup-agency').value;
     document.getElementById('setup-day-rate').value =
       agency === 'calfire' ? DEFAULT_RATES.calfire.dayRate : DEFAULT_RATES.standard.dayRate;
@@ -3652,12 +3655,18 @@ function updateDayTotalBox(date) {
 
 // ══════════ SERVICE TYPE HELPERS ══════════
 const SERVICE_LABELS = {
-  clerical: 'Clerical Support Unit',
-  heli1:    'Helicopter Support Unit — Type 1',
-  heli2:    'Helicopter Support Unit — Type 2',
-  comms1:   'Communications Unit — Type 1',
-  comms2:   'Communications Unit — Type 2',
+  clerical:  'Clerical Support Unit',
+  heli1:     'Helicopter Support Unit — Type 1',
+  heli2:     'Helicopter Support Unit — Type 2',
+  comms1:    'Communications Unit — Type 1',
+  comms2:    'Communications Unit — Type 2',
+  satellite: 'Satellite Internet Rental',
 };
+// Satellite rentals bill a day rate plus delivery/pickup mileage, so their
+// shift ticket carries miles in the SPECIAL column alongside the rental days.
+function isMileageUnit(inc) {
+  return !!(inc && inc.serviceType === 'satellite');
+}
 function getServiceLabel(inc) {
   return SERVICE_LABELS[inc.serviceType] || 'Clerical Support Unit';
 }
@@ -7325,11 +7334,12 @@ async function renderLocationDistances(firePts, distEl) {
   distEl.innerHTML = html;
 }
 
-// ══════════ SHIFT TICKET (OF-297, heli/comms units) ══════════
+// ══════════ SHIFT TICKET (OF-297, day-rate units) ══════════
 // Season-constant agreement numbers by unit type (update yearly if they change).
 const SHIFT_TICKET_AGREEMENTS = {
-  heli:  '12024B26T7084-P00001',
-  comms: '12024B24T7051',
+  heli:      '12024B26T7084-P00001',
+  comms:     '12024B24T7051',
+  satellite: '',   // TODO: awaiting the satellite/Starlink agreement number
 };
 const SHIFT_TICKET_CONTRACTOR = 'Nomadic Land Camps, LLC';
 const SHIFT_TICKET_SIGNATURE = 'Sarah Bobbe';
@@ -7338,6 +7348,7 @@ function getAgreementNumber(inc) {
   const t = inc && inc.serviceType || '';
   if (t.indexOf('heli') === 0) return SHIFT_TICKET_AGREEMENTS.heli;
   if (t.indexOf('comms') === 0) return SHIFT_TICKET_AGREEMENTS.comms;
+  if (t === 'satellite') return SHIFT_TICKET_AGREEMENTS.satellite;
   return '';
 }
 function getShiftTicketUnit(inc) {
@@ -7403,6 +7414,8 @@ function renderShiftTicketBlocks() {
     return;
   }
   const uses = entry.shiftUse || {};
+  const miles = entry.shiftMiles || {};
+  const wantsMiles = isMileageUnit(entry.incident);
   const per = parseInt(document.getElementById('st-days-per').value) || 5;
   let html = '';
   for (let i = 0; i < dates.length; i += per) {
@@ -7417,12 +7430,20 @@ function renderShiftTicketBlocks() {
         const v = uses[d] === 'special' ? 'special' : 'work';
         return `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:3px 0;font-size:12px">
           <span>${formatDate(d)}</span>
-          <select onchange="setShiftUse('${d}',this.value)" style="font-size:12px;padding:3px 6px;border:1px solid var(--gray-200);border-radius:5px">
-            <option value="work" ${v==='work'?'selected':''}>Work</option>
-            <option value="special" ${v==='special'?'selected':''}>Special (travel/standby)</option>
-          </select>
+          <div style="display:flex;align-items:center;gap:8px">
+            ${wantsMiles ? `<label style="display:flex;align-items:center;gap:4px;color:var(--gray-500)">Miles
+              <input type="number" min="0" step="1" value="${miles[d] != null ? escHtml(String(miles[d])) : ''}" placeholder="—"
+                onchange="setShiftMiles('${d}',this.value)"
+                style="width:64px;font-size:12px;padding:3px 6px;border:1px solid var(--gray-200);border-radius:5px;text-align:right;font-family:'IBM Plex Mono',monospace">
+            </label>` : ''}
+            <select onchange="setShiftUse('${d}',this.value)" style="font-size:12px;padding:3px 6px;border:1px solid var(--gray-200);border-radius:5px">
+              <option value="work" ${v==='work'?'selected':''}>Work</option>
+              <option value="special" ${v==='special'?'selected':''}>Special (travel/standby)</option>
+            </select>
+          </div>
         </div>`;
       }).join('')}
+      ${wantsMiles ? `<div style="font-size:11px;color:var(--gray-400);margin-top:6px">Enter delivery miles on the haul-out date and pickup miles on the retrieval date — they print in the SPECIAL column.</div>` : ''}
     </div>`;
   }
   el.innerHTML = html;
@@ -7437,6 +7458,17 @@ function setShiftUse(date, val) {
   saveState();
 }
 
+// Delivery / pickup mileage for satellite rentals, stored per date.
+function setShiftMiles(date, val) {
+  const entry = state._incidents.find(e => e.id === state._activeId);
+  if (!entry) return;
+  if (!entry.shiftMiles) entry.shiftMiles = {};
+  const n = parseFloat(val);
+  if (isNaN(n) || n <= 0) delete entry.shiftMiles[date];
+  else entry.shiftMiles[date] = n;
+  saveState();
+}
+
 function generateShiftTicket(startIndex, per) {
   const inc = state.incident;
   const entry = state._incidents.find(e => e.id === state._activeId);
@@ -7447,6 +7479,7 @@ function generateShiftTicket(startIndex, per) {
   const opts = {
     operator: document.getElementById('st-operator').value.trim(),
     uses: entry.shiftUse || {},
+    miles: entry.shiftMiles || {},
   };
   const win = window.open('', '_blank');
   if (!win) { alert('Pop-ups are blocked. Please allow pop-ups to generate the shift ticket.'); return; }
@@ -7461,18 +7494,24 @@ function buildShiftTicketHTML(inc, unit, dates, opts) {
   const mdy = d => { if (!d) return ''; const p = d.split('-'); return p[1] + '/' + p[2] + '/' + p[0].slice(2); };
   const chk = on => on ? '☒' : '☐';
   const uses = opts.uses || {};
+  const milesByDate = opts.miles || {};
   // Equipment-use rows: one per day. 24-hr shift = "1" under WORK, or under
-  // SPECIAL when the day is marked special (travel/standby). Pad to 5 rows.
+  // SPECIAL when the day is marked special (travel/standby). For satellite
+  // rentals, delivery/pickup mileage prints in SPECIAL alongside the rental
+  // day, which is why miles take precedence over the special "1". Pad to 5 rows.
   const MINROWS = 5;
   let useRows = '';
   const total = Math.max(MINROWS, dates.length);
   for (let i = 0; i < total; i++) {
     const d = dates[i];
     const special = d && uses[d] === 'special';
+    const mi = d ? milesByDate[d] : null;
+    const specialCell = mi ? (mi + ' mi') : (special ? '1' : '');
     useRows += `<tr>
-      <td class="c">${d ? mdy(d) : '&nbsp;'}</td><td></td><td></td><td class="c">${d && !special ? '1' : ''}</td><td class="c">${special ? '1' : ''}</td>
+      <td class="c">${d ? mdy(d) : '&nbsp;'}</td><td></td><td></td><td class="c">${d && !special ? '1' : ''}</td><td class="c">${specialCell}</td>
     </tr>`;
   }
+  const totalMiles = dates.reduce((s, d) => s + (parseFloat(milesByDate[d]) || 0), 0);
   const rangeLabel = dates.length ? (dates.length === 1 ? formatDate(dates[0]) : formatDate(dates[0]) + ' to ' + formatDate(dates[dates.length-1])) : '';
   const fileTitle = `ShiftTicket_${(inc.eNumber||'').replace(/[^A-Za-z0-9]/g,'')}_${(dates[0]||'').replace(/-/g,'')}`;
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(fileTitle)}</title><style>
@@ -7538,10 +7577,11 @@ body{font-family:Arial,Helvetica,sans-serif;color:#000;padding:16px;font-size:11
   </div>
   <div class="lower">
     <div class="euse">
-      <div class="useh">12. DATE (MO/DA/YR) &nbsp;&nbsp; 13. EQUIPMENT USE — HRS / <span class="circle">DAYS</span> / MILES (circle one)</div>
+      <div class="useh">12. DATE (MO/DA/YR) &nbsp;&nbsp; 13. EQUIPMENT USE — HRS / <span class="circle">DAYS</span> / ${totalMiles ? '<span class="circle">MILES</span>' : 'MILES'} (circle one)</div>
       <table>
         <tr><th style="width:22%">DATE</th><th>START</th><th>STOP</th><th>WORK</th><th>SPECIAL</th></tr>
         ${useRows}
+        ${totalMiles ? `<tr><td colspan="4" style="text-align:right;font-size:9px;font-weight:bold">TOTAL MILES</td><td class="c" style="font-weight:bold">${totalMiles} mi</td></tr>` : ''}
       </table>
     </div>
     <div class="right">
