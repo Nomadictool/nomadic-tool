@@ -776,7 +776,11 @@ body {
             <option value="satellite">Satellite Internet Rental (Starlink)</option>
           </select>
         </div>
-        <div class="form-group">
+        <div class="form-group" id="setup-agreement-wrap" style="display:none">
+          <label>Agreement Number</label>
+          <input type="text" id="setup-agreement" placeholder="Per-incident agreement #">
+        </div>
+        <div class="form-group" id="setup-unit-wrap">
           <label>Unit</label>
           <select id="setup-unit">
             <option value="">— Select unit —</option>
@@ -792,10 +796,22 @@ body {
           </select>
         </div>
       </div>
+
+      <div id="setup-satellites-section" style="display:none;margin-bottom:16px">
+        <div class="section-label" style="margin-top:0">Satellites</div>
+        <div style="font-size:12px;color:var(--gray-500);margin-bottom:8px">
+          Each satellite has its own S number and gets its own shift ticket. Add them on the
+          <strong>Fleet</strong> tab first (Make <em>Starlink</em>, Model <em>Satellite</em> or <em>Satellite Mini</em>)
+          so serial numbers and models fill in automatically.
+        </div>
+        <div id="setup-satellites-list"></div>
+        <button type="button" class="btn btn-outline btn-sm" onclick="addSatelliteRow()" style="margin-top:6px">+ Add Satellite</button>
+        <div id="setup-satellites-summary" style="font-size:12px;color:var(--gray-600);margin-top:8px"></div>
+      </div>
       <div class="form-grid" style="margin-bottom:16px">
         <div class="form-group">
-          <label>Day Rate</label>
-          <input type="number" id="setup-day-rate" step="0.01" placeholder="e.g. 1200.00">
+          <label id="setup-day-rate-label">Day Rate</label>
+          <input type="number" id="setup-day-rate" step="0.01" placeholder="e.g. 1200.00" oninput="renderSatelliteSummary()">
         </div>
       </div>
 
@@ -2882,8 +2898,82 @@ function onServiceTypeChange() {
     const agency = document.getElementById('setup-agency').value;
     document.getElementById('setup-day-rate').value =
       agency === 'calfire' ? DEFAULT_RATES.calfire.dayRate : DEFAULT_RATES.standard.dayRate;
+  } else if (sel.value === 'satellite' && !document.getElementById('setup-day-rate').value) {
+    document.getElementById('setup-day-rate').value = SATELLITE_DEFAULT_RATE;
   }
-  // Satellite has no standard rate yet — leave whatever's typed in.
+  updateSetupServiceFields();
+}
+
+// Satellite incidents carry a list of satellites (each with its own S number)
+// instead of a single unit, bill per satellite, and use a per-incident
+// agreement number rather than a season-long one.
+const SATELLITE_DEFAULT_RATE = 100;
+
+function updateSetupServiceFields() {
+  const t = document.getElementById('setup-service-type').value;
+  const isSat = t === 'satellite';
+  const satSection = document.getElementById('setup-satellites-section');
+  const unitWrap = document.getElementById('setup-unit-wrap');
+  const agreeWrap = document.getElementById('setup-agreement-wrap');
+  const rateLabel = document.getElementById('setup-day-rate-label');
+  if (satSection) satSection.style.display = isSat ? '' : 'none';
+  if (unitWrap) unitWrap.style.display = isSat ? 'none' : '';
+  // Heli/comms use their season-constant agreement numbers; satellite needs one per incident.
+  if (agreeWrap) agreeWrap.style.display = isSat ? '' : 'none';
+  if (rateLabel) rateLabel.textContent = isSat ? 'Day Rate (per satellite)' : 'Day Rate';
+  if (isSat) {
+    if (!document.querySelectorAll('#setup-satellites-list .satellite-row').length) addSatelliteRow();
+    renderSatelliteSummary();
+  }
+}
+
+function fleetUnitDatalistOptions() {
+  return (_unitsCache || []).map(u => `<option value="${escHtml(u.name)}">`).join('');
+}
+
+function addSatelliteRow(unitName, sNumber) {
+  const list = document.getElementById('setup-satellites-list');
+  if (!list) return;
+  const div = document.createElement('div');
+  div.className = 'satellite-row';
+  div.style.cssText = 'display:flex;gap:8px;align-items:center;margin-bottom:6px;flex-wrap:wrap';
+  div.innerHTML =
+    `<input type="text" class="sat-unit-input" list="sat-unit-names" placeholder="Fleet unit name" value="${escHtml(unitName || '')}"
+       style="flex:1;min-width:130px;border:1.5px solid var(--gray-200);border-radius:var(--radius);padding:8px 10px;font-size:13px;font-family:inherit">
+     <input type="text" class="sat-snumber-input" placeholder="S number" value="${escHtml(sNumber || '')}"
+       style="flex:1;min-width:120px;border:1.5px solid var(--gray-200);border-radius:var(--radius);padding:8px 10px;font-size:13px;font-family:'IBM Plex Mono',monospace">
+     <button type="button" onclick="removeSatelliteRow(this)" title="Remove"
+       style="background:none;border:none;color:var(--gray-400);font-size:16px;cursor:pointer">✕</button>`;
+  list.appendChild(div);
+  let dl = document.getElementById('sat-unit-names');
+  if (!dl) { dl = document.createElement('datalist'); dl.id = 'sat-unit-names'; document.body.appendChild(dl); }
+  dl.innerHTML = fleetUnitDatalistOptions();
+  div.querySelectorAll('input').forEach(i => i.addEventListener('input', renderSatelliteSummary));
+  renderSatelliteSummary();
+}
+
+function removeSatelliteRow(btn) {
+  const row = btn.closest('.satellite-row');
+  if (row) row.remove();
+  renderSatelliteSummary();
+}
+
+function collectSatelliteRows() {
+  return [...document.querySelectorAll('#setup-satellites-list .satellite-row')].map(r => ({
+    unitName: r.querySelector('.sat-unit-input').value.trim(),
+    sNumber:  r.querySelector('.sat-snumber-input').value.trim(),
+  })).filter(s => s.unitName || s.sNumber);
+}
+
+function renderSatelliteSummary() {
+  const el = document.getElementById('setup-satellites-summary');
+  if (!el) return;
+  const rows = collectSatelliteRows();
+  const rate = parseFloat(document.getElementById('setup-day-rate').value) || 0;
+  if (!rows.length) { el.textContent = ''; return; }
+  const missingS = rows.filter(r => !r.sNumber).length;
+  el.innerHTML = `<strong>${rows.length}</strong> satellite${rows.length !== 1 ? 's' : ''} &times; $${rate.toFixed(2)}/day = <strong>$${(rows.length * rate).toFixed(2)}/day</strong>`
+    + (missingS ? ` &nbsp;·&nbsp; <span style="color:var(--amber-dim)">${missingS} missing an S number</span>` : '');
 }
 
 // Keep the suggested Day Rate in sync with the Agency Type for clerical units,
@@ -3097,7 +3187,9 @@ function saveSetup() {
     ? [...document.querySelectorAll('.setup-employee-checkbox:checked')].map(c => c.value)
     : null;
 
-  const incData = { name, eNumber, incidentNumber, location: incLocation, agency, startDate, dayRate, serviceType, unit, staffNames, addStaff, additionalStaff, perDiemEnabled, perDiemMealsRate, perDiemLodgingRate };
+  const satellites = serviceType === 'satellite' ? collectSatelliteRows() : [];
+  const agreementNumber = document.getElementById('setup-agreement').value.trim();
+  const incData = { name, eNumber, incidentNumber, location: incLocation, agency, startDate, dayRate, serviceType, unit, satellites, agreementNumber, staffNames, addStaff, additionalStaff, perDiemEnabled, perDiemMealsRate, perDiemLodgingRate };
   if (existingEntry) {
     existingEntry.incident = incData;
   } else {
@@ -3154,7 +3246,12 @@ function showSetup() {
     document.getElementById('setup-perdiem-meals').value   = inc.perDiemMealsRate   || '';
     document.getElementById('setup-perdiem-lodging').value = inc.perDiemLodgingRate || '';
     togglePerDiemSetup();
+    // Repopulate satellites + per-incident agreement number
+    document.getElementById('setup-agreement').value = inc.agreementNumber || '';
+    document.getElementById('setup-satellites-list').innerHTML = '';
+    (inc.satellites || []).forEach(s => addSatelliteRow(s.unitName, s.sNumber));
   }
+  updateSetupServiceFields();
   setSetupModalMode(!!state.incident);
   populateSetupEmployeesList();
   document.getElementById('setup-modal').style.display = 'flex';
@@ -3641,12 +3738,15 @@ function updateDayTotalBox(date) {
   const r = getRates();
   const todayOrders = state.orders.filter(o => o.date === date);
   const orderTotal = todayOrders.reduce((sum, o) => sum + calcOrderTotal(o), 0);
-  const staffTotal = inc.dayRate || 0; // flat day rate for the equipment/unit
+  const unitCount = getServiceUnitCount(inc);
+  const staffTotal = getDailyUnitCharge(inc); // day rate × units (satellites bill per unit)
   const addStaffTotal = inc.addStaff ? (inc.additionalStaff || []).reduce((sum, s) => sum + (s.rate || 0), 0) : 0;
   const perDiemTotal = calcPerDiemForDate(date).total;
   const grand = orderTotal + staffTotal + addStaffTotal + perDiemTotal;
   document.getElementById('day-total-display').textContent = '$' + grand.toFixed(2);
-  let breakdown = `Day rate: $${staffTotal.toFixed(2)}`;
+  let breakdown = unitCount > 1
+    ? `Day rate: $${(inc.dayRate||0).toFixed(2)} × ${unitCount} = $${staffTotal.toFixed(2)}`
+    : `Day rate: $${staffTotal.toFixed(2)}`;
   if (addStaffTotal) breakdown += ` + Add'l staff: $${addStaffTotal.toFixed(2)}`;
   breakdown += ` + Services: $${orderTotal.toFixed(2)}`;
   if (perDiemTotal) breakdown += ` + Per Diem: $${perDiemTotal.toFixed(2)}`;
@@ -3666,6 +3766,27 @@ const SERVICE_LABELS = {
 // shift ticket carries miles in the SPECIAL column alongside the rental days.
 function isMileageUnit(inc) {
   return !!(inc && inc.serviceType === 'satellite');
+}
+// Satellite incidents bill the day rate once per satellite; everything else
+// bills a single unit rate.
+function getServiceUnitCount(inc) {
+  if (inc && inc.serviceType === 'satellite') return Math.max(1, (inc.satellites || []).length);
+  return 1;
+}
+// The day-rate charge for one day of this incident.
+function getDailyUnitCharge(inc) {
+  if (!inc) return 0;
+  return (inc.dayRate || 0) * getServiceUnitCount(inc);
+}
+// Every Fleet unit tied to an incident — the single unit, plus each satellite.
+function getIncidentUnitNames(inc) {
+  if (!inc) return [];
+  const names = [];
+  if (inc.unit) names.push(inc.unit);
+  (inc.satellites || []).forEach(s => {
+    if (s.unitName && names.indexOf(s.unitName) < 0) names.push(s.unitName);
+  });
+  return names;
 }
 function getServiceLabel(inc) {
   return SERVICE_LABELS[inc.serviceType] || 'Clerical Support Unit';
@@ -3752,7 +3873,8 @@ function renderInvoice() {
   if (totalPlotSf) addLine('Custom Lamination (Sq Ft)', totalPlotSf, r.custLam, 'sq ft');
 
   const serviceTotal = lines.reduce((s, l) => s + l.subtotal, 0);
-  const staffTotal = inc.dayRate || 0; // flat day rate for the equipment/unit
+  const unitCount = getServiceUnitCount(inc);
+  const staffTotal = getDailyUnitCharge(inc); // day rate × units (satellites bill per unit)
   const addStaffTotal = inc.addStaff ? (inc.additionalStaff || []).reduce((sum, s) => sum + (s.rate || 0), 0) : 0;
   const pdClaim = calcPerDiemForDate(date);
   const grand = serviceTotal + staffTotal + addStaffTotal + pdClaim.total;
@@ -3804,7 +3926,7 @@ function renderInvoice() {
         <tbody>
           <tr class="rate-row">
             <td><strong>${getServiceLabel(inc)}${inc.unit ? ' — ' + inc.unit : ''}</strong>${presentStaff.length > 0 ? '<br><span style="font-size:11px;color:var(--gray-600)">'+presentStaff.map(escHtml).join(' &nbsp;|&nbsp; ')+'</span>' : ''}</td>
-            <td>1</td><td>day</td>
+            <td>${unitCount}</td><td>${unitCount > 1 ? 'unit-days' : 'day'}</td>
             <td class="inv-money">$${(inc.dayRate||0).toFixed(2)}</td>
             <td class="inv-money">$${staffTotal.toFixed(2)}</td>
           </tr>
@@ -3939,7 +4061,7 @@ function renderSummary() {
   }
   // Day-rate-only unit: show simplified day-rate summary
   if (simpleUnit) {
-    const dayRate = inc.dayRate || 0;
+    const dayRate = getDailyUnitCharge(inc); // day rate × units (satellites bill per unit)
     const addStaffRate = inc.addStaff ? (inc.additionalStaff||[]).reduce((s,x)=>s+(x.rate||0),0) : 0;
     const totalDays = dates.length;
     const totalStaff = totalDays * dayRate;
@@ -4134,7 +4256,7 @@ function exportSummaryCSV() {
     lines2.push(esc2('Exported: ' + todayStr()));
     lines2.push('');
     lines2.push(['Date','Day Rate','Day Total'].join(','));
-    var dayRate2 = inc.dayRate || 0;
+    var dayRate2 = getDailyUnitCharge(inc);
     var addSt2 = inc.addStaff ? (inc.additionalStaff||[]).reduce(function(s,x){ return s+(x.rate||0); }, 0) : 0;
     var dayTotal2 = dayRate2 + addSt2;
     dates.forEach(function(date) {
@@ -4204,7 +4326,7 @@ function exportSummaryCSV() {
       }
     });
     qtys['plot'] = plotLF;
-    var dayRate = inc.dayRate || 0;
+    var dayRate = getDailyUnitCharge(inc);
     var addSt = inc.addStaff ? (inc.additionalStaff||[]).reduce(function(s,x){ return s+(x.rate||0); }, 0) : 0;
     var dayStaff = dayRate + addSt;
     var svcTotal = dayOrders.reduce(function(s,o){ return s + calcOrderTotal(o); }, 0);
@@ -4379,7 +4501,7 @@ function renderIncidentManager() {
     const billingDays = new Set([...(entry.orders||[]).map(o => o.date), ...(entry.approvedDates||[])]);
     const days = billingDays.size;
     const serviceTotal = (entry.orders||[]).reduce((s, o) => s + calcOrderTotal(o, inc.agency), 0);
-    const grand = serviceTotal + days * (inc.dayRate||0) + (inc.addStaff ? days * (inc.additionalStaff||[]).reduce((s,x)=>s+(x.rate||0),0) : 0);
+    const grand = serviceTotal + days * getDailyUnitCharge(inc) + (inc.addStaff ? days * (inc.additionalStaff||[]).reduce((s,x)=>s+(x.rate||0),0) : 0);
     const isCurrent = entry.id === state._activeId;
     const agLabel = inc.agency === 'calfire' ? 'CAL FIRE' : (inc.agency === 'federal' ? 'US FS' : 'STATE');
     const rowStyle = isArchived ? 'opacity:0.55;' : '';
@@ -4457,6 +4579,8 @@ function startNewIncident() {
   document.getElementById('setup-enumber').value = '';
   document.getElementById('setup-incident-number').value = '';
   document.getElementById('setup-location').value = '';
+  document.getElementById('setup-agreement').value = '';
+  document.getElementById('setup-satellites-list').innerHTML = '';
   document.getElementById('setup-agency').value = 'federal';
   document.getElementById('setup-service-type').value = 'clerical';
   document.getElementById('setup-unit').value = '';
@@ -5399,7 +5523,7 @@ function computeFireTotal(entry) {
   const dates = [...billingDates].sort();
   const days = billingDates.size;
   const serviceTotal = isSimple ? 0 : (entry.orders || []).reduce((s, o) => s + calcOrderTotal(o, inc.agency), 0);
-  const staffTotal = days * (inc.dayRate || 0);
+  const staffTotal = days * getDailyUnitCharge(inc);
   const addStTotal = inc.addStaff ? days * (inc.additionalStaff || []).reduce((s, x) => s + (x.rate || 0), 0) : 0;
   return { days, serviceTotal, staffTotal, addStTotal, grand: serviceTotal + staffTotal + addStTotal, dates, endDate: dates.length ? dates[dates.length - 1] : (inc.startDate || null) };
 }
@@ -6225,7 +6349,8 @@ async function reloadUnits() {
 }
 
 function getUnitEffectiveStatus(unit) {
-  const activeEntry = state._incidents.find(e => e.incident && !e.archived && e.incident.unit === unit.name);
+  const activeEntry = state._incidents.find(e => e.incident && !e.archived
+    && getIncidentUnitNames(e.incident).indexOf(unit.name) >= 0);
   if (activeEntry) return { key: 'incident', label: 'On Incident — ' + (activeEntry.incident.name || unit.name), cls: 'us-incident' };
   const map = {
     available:   { key: 'available',    label: 'Available',       cls: 'us-available' },
@@ -6249,11 +6374,12 @@ async function renderFleetScreen() {
   const trackedNames = new Set(units.map(u => u.name));
   const ghosts = [];
   state._incidents.forEach(e => {
-    const n = e.incident && !e.archived && e.incident.unit;
-    if (n && !trackedNames.has(n)) {
+    if (!e.incident || e.archived) return;
+    getIncidentUnitNames(e.incident).forEach(n => {
+      if (!n || trackedNames.has(n)) return;
       ghosts.push({ name: n, ghost: true, effectiveStatus: { key: 'incident', label: 'On Incident — ' + (e.incident.name || n), cls: 'us-incident' } });
       trackedNames.add(n);
-    }
+    });
   });
 
   const counts = { available: 0, incident: 0, maintenance: 0, storage: 0 };
@@ -6858,7 +6984,7 @@ function computeSeasonStats(year) {
     const inc = e.incident;
     const simple = isSimpleUnit(inc);
     const agency = inc.agency || 'federal';
-    const dayRate = inc.dayRate || 0;
+    const dayRate = getDailyUnitCharge(inc); // day rate × units (satellites bill per unit)
     const addStaffRate = inc.addStaff
       ? (inc.additionalStaff || []).reduce((s, x) => s + (x.rate || 0), 0)
       : 0;
@@ -7169,7 +7295,7 @@ function collectLocationPoints() {
   state._incidents.forEach(e => {
     if (!e.incident || e.archived) return;
     const inc = e.incident;
-    if (inc.unit) onIncident.add(inc.unit);
+    getIncidentUnitNames(inc).forEach(n => onIncident.add(n));
     const q = (inc.location || '').trim();
     if (!q) return;
     fires.push({
@@ -7337,18 +7463,21 @@ async function renderLocationDistances(firePts, distEl) {
 // ══════════ SHIFT TICKET (OF-297, day-rate units) ══════════
 // Season-constant agreement numbers by unit type (update yearly if they change).
 const SHIFT_TICKET_AGREEMENTS = {
-  heli:      '12024B26T7084-P00001',
-  comms:     '12024B24T7051',
-  satellite: '',   // TODO: awaiting the satellite/Starlink agreement number
+  heli:  '12024B26T7084-P00001',
+  comms: '12024B24T7051',
+  // Satellite rentals get a different agreement number per incident, entered in Setup.
 };
 const SHIFT_TICKET_CONTRACTOR = 'Nomadic Land Camps, LLC';
 const SHIFT_TICKET_SIGNATURE = 'Sarah Bobbe';
 
 function getAgreementNumber(inc) {
+  // A per-incident agreement number always wins; heli/comms fall back to their
+  // season-long constants when none is entered.
+  const perIncident = (inc && inc.agreementNumber || '').trim();
+  if (perIncident) return perIncident;
   const t = inc && inc.serviceType || '';
   if (t.indexOf('heli') === 0) return SHIFT_TICKET_AGREEMENTS.heli;
   if (t.indexOf('comms') === 0) return SHIFT_TICKET_AGREEMENTS.comms;
-  if (t === 'satellite') return SHIFT_TICKET_AGREEMENTS.satellite;
   return '';
 }
 function getShiftTicketUnit(inc) {
@@ -7375,27 +7504,48 @@ function getShiftTicketDates(entry) {
   return listConsecutiveDates(start, end);
 }
 
+// Each satellite on the incident, paired with its Fleet record (for serial/model).
+function getSatelliteTargets(inc) {
+  if (!inc || inc.serviceType !== 'satellite') return [];
+  return (inc.satellites || []).map(s => ({
+    unitName: s.unitName || '',
+    sNumber: s.sNumber || '',
+    unit: (_unitsCache || []).find(u => u.name === s.unitName) || null,
+  }));
+}
+
 function openShiftTicketModal() {
   const inc = state.incident;
   const entry = state._incidents.find(e => e.id === state._activeId);
   if (!inc || !entry) return;
-  const unit = getShiftTicketUnit(inc);
   const staff = (inc.staffNames || []);
   document.getElementById('st-operator').value = staff[0] || '';
+  const sats = getSatelliteTargets(inc);
   let eq;
-  if (unit) {
-    eq = `${escHtml(unit.make || '—')} ${escHtml(unit.model || '')} · Serial ${escHtml(unit.vin || '—')} · Plate ${escHtml(unit.license_plate || '—')}`;
-  } else if (!_unitsCache.length) {
-    // Nothing loaded at all — usually a permissions problem reading the units
-    // table, not a missing record. Distinguishing the two saves a support call.
-    eq = '<span style="color:#c0392b">Could not load fleet data on this device — equipment fields (6, 7, 9, 10) will be blank. Ask your admin to check unit read access.</span>';
+  if (sats.length) {
+    // One ticket per satellite — each carries its own S number and serial.
+    const missingFleet = sats.filter(s => !s.unit).map(s => s.unitName || '(unnamed)');
+    const missingS = sats.filter(s => !s.sNumber).length;
+    eq = `<strong>${sats.length}</strong> satellite${sats.length !== 1 ? 's' : ''} — one ticket each, using its own S number and serial.`
+      + (missingFleet.length ? `<br><span style="color:#c0392b">No fleet record for: ${escHtml(missingFleet.join(', '))} — add them on the Fleet tab so serial/model fill in.</span>` : '')
+      + (missingS ? `<br><span style="color:#b45309">${missingS} missing an S number — add it in the incident Setup.</span>` : '');
   } else {
-    eq = '<span style="color:#c0392b">No fleet record for unit “' + escHtml(inc.unit || '') + '” — add it on the Fleet tab so equipment fields fill in.</span>';
+    const unit = getShiftTicketUnit(inc);
+    if (unit) {
+      eq = `${escHtml(unit.make || '—')} ${escHtml(unit.model || '')} · Serial ${escHtml(unit.vin || '—')} · Plate ${escHtml(unit.license_plate || '—')}`;
+    } else if (!_unitsCache.length) {
+      // Nothing loaded at all — usually a permissions problem reading the units
+      // table, not a missing record. Distinguishing the two saves a support call.
+      eq = '<span style="color:#c0392b">Could not load fleet data on this device — equipment fields (6, 7, 9, 10) will be blank. Ask your admin to check unit read access.</span>';
+    } else {
+      eq = '<span style="color:#c0392b">No fleet record for unit “' + escHtml(inc.unit || '') + '” — add it on the Fleet tab so equipment fields fill in.</span>';
+    }
   }
   document.getElementById('shift-ticket-autofill').innerHTML =
     `<strong>Auto-filled from this incident &amp; Fleet:</strong><br>` +
     `Agreement #: ${escHtml(getAgreementNumber(inc) || '—')} &nbsp;·&nbsp; Contractor: ${SHIFT_TICKET_CONTRACTOR}<br>` +
-    `Incident: ${escHtml(inc.name || '—')} &nbsp;·&nbsp; Incident #: ${escHtml(inc.incidentNumber || '—')} &nbsp;·&nbsp; Resource Order #: ${escHtml(inc.eNumber || '—')}<br>` +
+    `Incident: ${escHtml(inc.name || '—')} &nbsp;·&nbsp; Incident #: ${escHtml(inc.incidentNumber || '—')}` +
+    (sats.length ? '' : ` &nbsp;·&nbsp; Resource Order #: ${escHtml(inc.eNumber || '—')}`) + `<br>` +
     `Equipment: ${eq}`;
   renderShiftTicketBlocks();
   document.getElementById('shift-ticket-modal').style.display = 'flex';
@@ -7475,20 +7625,33 @@ function generateShiftTicket(startIndex, per) {
   if (!inc || !entry) return;
   const allDates = getShiftTicketDates(entry);
   const dates = allDates.slice(startIndex, startIndex + per);
-  const unit = getShiftTicketUnit(inc);
-  const opts = {
+  const baseOpts = {
     operator: document.getElementById('st-operator').value.trim(),
     uses: entry.shiftUse || {},
     miles: entry.shiftMiles || {},
   };
+  const sats = getSatelliteTargets(inc);
+  let body;
+  if (sats.length) {
+    // One OF-297 per satellite, each with its own S number and serial, printed
+    // as consecutive pages in a single job. Delivery/pickup mileage rides on the
+    // first ticket only so a single haul isn't claimed once per satellite.
+    body = sats.map((s, i) => buildShiftTicketHTML(inc, s.unit, dates, Object.assign({}, baseOpts, {
+      resourceOrder: s.sNumber,
+      miles: i === 0 ? baseOpts.miles : {},
+      milesNote: i === 0 && Object.keys(baseOpts.miles).length ? 'Delivery/pickup mileage for all satellites on this resource order.' : '',
+    }), { pageBreak: i < sats.length - 1 })).join('');
+  } else {
+    body = buildShiftTicketHTML(inc, getShiftTicketUnit(inc), dates, baseOpts, {});
+  }
   const win = window.open('', '_blank');
   if (!win) { alert('Pop-ups are blocked. Please allow pop-ups to generate the shift ticket.'); return; }
-  win.document.write(buildShiftTicketHTML(inc, unit, dates, opts));
+  win.document.write(shiftTicketPage(inc, dates, body, sats.length));
   win.document.close();
   win.focus();
 }
 
-function buildShiftTicketHTML(inc, unit, dates, opts) {
+function buildShiftTicketHTML(inc, unit, dates, opts, pageOpts) {
   const esc = escHtml;
   const agreement = getAgreementNumber(inc);
   const mdy = d => { if (!d) return ''; const p = d.split('-'); return p[1] + '/' + p[2] + '/' + p[0].slice(2); };
@@ -7512,8 +7675,70 @@ function buildShiftTicketHTML(inc, unit, dates, opts) {
     </tr>`;
   }
   const totalMiles = dates.reduce((s, d) => s + (parseFloat(milesByDate[d]) || 0), 0);
-  const rangeLabel = dates.length ? (dates.length === 1 ? formatDate(dates[0]) : formatDate(dates[0]) + ' to ' + formatDate(dates[dates.length-1])) : '';
+  // Satellite tickets override the resource order with that satellite's S number.
+  const resourceOrder = opts.resourceOrder != null && opts.resourceOrder !== '' ? opts.resourceOrder : (inc.eNumber || '');
+  return `
+<div class="of297"${pageOpts && pageOpts.pageBreak ? ' style="page-break-after:always"' : ''}>
+  <div class="hdr">
+    <div class="title">EMERGENCY EQUIPMENT SHIFT TICKET</div>
+    <div class="ro">RESOURCE ORDER #<br><b>${esc(resourceOrder)}</b></div>
+  </div>
+  <div class="note">NOTE: The responsible Government Officer will update this form each day or shift and make initial and final equipment inspections.</div>
+  <div class="row">
+    <div class="cell" style="flex:1"><span class="fl">1. AGREEMENT NUMBER</span><span class="fv">${esc(agreement)}</span></div>
+    <div class="cell" style="flex:1"><span class="fl">2. CONTRACTOR (name)</span><span class="fv">${esc(SHIFT_TICKET_CONTRACTOR)}</span></div>
+  </div>
+  <div class="row">
+    <div class="cell" style="flex:1"><span class="fl">3. INCIDENT OR PROJECT NAME</span><span class="fv">${esc(inc.name || '')}</span></div>
+    <div class="cell" style="width:150px"><span class="fl">4. INCIDENT NUMBER</span><span class="fv">${esc(inc.incidentNumber || '')}</span></div>
+    <div class="cell" style="flex:1"><span class="fl">5. OPERATOR (name)</span><span class="fv">${esc(opts.operator || '')}</span></div>
+  </div>
+  <div class="row">
+    <div class="cell" style="flex:1"><span class="fl">6. EQUIPMENT MAKE</span><span class="fv">${esc(unit && unit.make || '')}</span></div>
+    <div class="cell" style="width:150px"><span class="fl">7. EQUIPMENT MODEL</span><span class="fv">${esc(unit && unit.model || '')}</span></div>
+    <div class="cell" style="flex:1"><span class="fl">8. OPERATOR FURNISHED BY</span><span class="furn">${chk(true)} Contractor &nbsp; ${chk(false)} Government</span></div>
+  </div>
+  <div class="row">
+    <div class="cell" style="flex:1"><span class="fl">9. SERIAL NUMBER</span><span class="fv">${esc(unit && unit.vin || '')}</span></div>
+    <div class="cell" style="width:150px"><span class="fl">10. LICENSE NUMBER</span><span class="fv">${esc(unit && unit.license_plate || '')}</span></div>
+    <div class="cell" style="flex:1"><span class="fl">11. OPERATING SUPPLIES FURNISHED BY</span><span class="furn">${chk(true)} Contractor &nbsp; ${chk(false)} Government</span></div>
+  </div>
+  <div class="lower">
+    <div class="euse">
+      <div class="useh">12. DATE (MO/DA/YR) &nbsp;&nbsp; 13. EQUIPMENT USE — HRS / <span class="circle">DAYS</span> / ${totalMiles ? '<span class="circle">MILES</span>' : 'MILES'} (circle one)</div>
+      <table>
+        <tr><th style="width:22%">DATE</th><th>START</th><th>STOP</th><th>WORK</th><th>SPECIAL</th></tr>
+        ${useRows}
+        ${totalMiles ? `<tr><td colspan="4" style="text-align:right;font-size:9px;font-weight:bold">TOTAL MILES</td><td class="c" style="font-weight:bold">${totalMiles} mi</td></tr>` : ''}
+      </table>
+      ${opts.milesNote ? `<div style="font-size:8.5px;font-style:italic;padding:3px 4px">${esc(opts.milesNote)}</div>` : ''}
+    </div>
+    <div class="right">
+      <div class="rcell" style="min-height:70px"><span class="fl">14. REMARKS (released, down time and cause, problems, etc)</span></div>
+      <div class="rcell status"><span class="fl">15. EQUIPMENT STATUS</span>
+        <div>${chk(false)} a. Inspected and under agreement</div>
+        <div>${chk(false)} b. Released by Government</div>
+        <div>${chk(false)} c. Withdrawn by Contractor</div>
+      </div>
+      <div class="rcell" style="border-bottom:none"><span class="fl">16. INVOICE POSTED BY (Recorder's Initials)</span><span class="fv">&nbsp;</span></div>
+    </div>
+  </div>
+  <div class="sig">
+    <div class="cell s1"><span class="fl">17. CONTRACTOR'S OR AUTHORIZED AGENT'S SIGNATURE</span><span class="signame">${esc(SHIFT_TICKET_SIGNATURE)}</span></div>
+    <div class="cell s2"><span class="fl">18. GOVERNMENT OFFICER'S SIGNATURE</span></div>
+    <div class="cell s3"><span class="fl">19. DATE SIGNED</span></div>
+  </div>
+  <div class="foot"><span>NSN 7540-01-119-5628 &nbsp; 50297-102</span><span>OPTIONAL FORM 297 (Rev. 7-90) &nbsp; USDA/USDI</span></div>
+</div>`;
+}
+
+// Wraps one or more OF-297 tickets in a printable page.
+function shiftTicketPage(inc, dates, body, satCount) {
+  const esc = escHtml;
   const fileTitle = `ShiftTicket_${(inc.eNumber||'').replace(/[^A-Za-z0-9]/g,'')}_${(dates[0]||'').replace(/-/g,'')}`;
+  const label = satCount > 1
+    ? `${satCount} tickets — one per satellite. Print all pages.`
+    : '';
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(fileTitle)}</title><style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:Arial,Helvetica,sans-serif;color:#000;padding:16px;font-size:11px}
@@ -7546,61 +7771,13 @@ body{font-family:Arial,Helvetica,sans-serif;color:#000;padding:16px;font-size:11
 .sig .s1{flex:1}.sig .s2{flex:1}.sig .s3{width:150px}
 .signame{display:block;font-family:'Segoe Script','Brush Script MT','Comic Sans MS',cursive;font-size:20px;padding-top:8px}
 .foot{display:flex;justify-content:space-between;font-size:9px;padding:4px 8px}
-@media print{body{padding:0} button{display:none} @page{margin:12mm}}
+.of297 + .of297{margin-top:22px}
+@media print{body{padding:0} button{display:none} .of297+.of297{margin-top:0} @page{margin:12mm}}
 .pbar{max-width:760px;margin:12px auto 0;text-align:right}
 .pbar button{font-family:Arial;font-size:13px;padding:8px 16px;cursor:pointer}
 </style></head><body>
-<div class="of297">
-  <div class="hdr">
-    <div class="title">EMERGENCY EQUIPMENT SHIFT TICKET</div>
-    <div class="ro">RESOURCE ORDER #<br><b>${esc(inc.eNumber || '')}</b></div>
-  </div>
-  <div class="note">NOTE: The responsible Government Officer will update this form each day or shift and make initial and final equipment inspections.</div>
-  <div class="row">
-    <div class="cell" style="flex:1"><span class="fl">1. AGREEMENT NUMBER</span><span class="fv">${esc(agreement)}</span></div>
-    <div class="cell" style="flex:1"><span class="fl">2. CONTRACTOR (name)</span><span class="fv">${esc(SHIFT_TICKET_CONTRACTOR)}</span></div>
-  </div>
-  <div class="row">
-    <div class="cell" style="flex:1"><span class="fl">3. INCIDENT OR PROJECT NAME</span><span class="fv">${esc(inc.name || '')}</span></div>
-    <div class="cell" style="width:150px"><span class="fl">4. INCIDENT NUMBER</span><span class="fv">${esc(inc.incidentNumber || '')}</span></div>
-    <div class="cell" style="flex:1"><span class="fl">5. OPERATOR (name)</span><span class="fv">${esc(opts.operator || '')}</span></div>
-  </div>
-  <div class="row">
-    <div class="cell" style="flex:1"><span class="fl">6. EQUIPMENT MAKE</span><span class="fv">${esc(unit && unit.make || '')}</span></div>
-    <div class="cell" style="width:150px"><span class="fl">7. EQUIPMENT MODEL</span><span class="fv">${esc(unit && unit.model || '')}</span></div>
-    <div class="cell" style="flex:1"><span class="fl">8. OPERATOR FURNISHED BY</span><span class="furn">${chk(true)} Contractor &nbsp; ${chk(false)} Government</span></div>
-  </div>
-  <div class="row">
-    <div class="cell" style="flex:1"><span class="fl">9. SERIAL NUMBER</span><span class="fv">${esc(unit && unit.vin || '')}</span></div>
-    <div class="cell" style="width:150px"><span class="fl">10. LICENSE NUMBER</span><span class="fv">${esc(unit && unit.license_plate || '')}</span></div>
-    <div class="cell" style="flex:1"><span class="fl">11. OPERATING SUPPLIES FURNISHED BY</span><span class="furn">${chk(true)} Contractor &nbsp; ${chk(false)} Government</span></div>
-  </div>
-  <div class="lower">
-    <div class="euse">
-      <div class="useh">12. DATE (MO/DA/YR) &nbsp;&nbsp; 13. EQUIPMENT USE — HRS / <span class="circle">DAYS</span> / ${totalMiles ? '<span class="circle">MILES</span>' : 'MILES'} (circle one)</div>
-      <table>
-        <tr><th style="width:22%">DATE</th><th>START</th><th>STOP</th><th>WORK</th><th>SPECIAL</th></tr>
-        ${useRows}
-        ${totalMiles ? `<tr><td colspan="4" style="text-align:right;font-size:9px;font-weight:bold">TOTAL MILES</td><td class="c" style="font-weight:bold">${totalMiles} mi</td></tr>` : ''}
-      </table>
-    </div>
-    <div class="right">
-      <div class="rcell" style="min-height:70px"><span class="fl">14. REMARKS (released, down time and cause, problems, etc)</span></div>
-      <div class="rcell status"><span class="fl">15. EQUIPMENT STATUS</span>
-        <div>${chk(false)} a. Inspected and under agreement</div>
-        <div>${chk(false)} b. Released by Government</div>
-        <div>${chk(false)} c. Withdrawn by Contractor</div>
-      </div>
-      <div class="rcell" style="border-bottom:none"><span class="fl">16. INVOICE POSTED BY (Recorder's Initials)</span><span class="fv">&nbsp;</span></div>
-    </div>
-  </div>
-  <div class="sig">
-    <div class="cell s1"><span class="fl">17. CONTRACTOR'S OR AUTHORIZED AGENT'S SIGNATURE</span><span class="signame">${esc(SHIFT_TICKET_SIGNATURE)}</span></div>
-    <div class="cell s2"><span class="fl">18. GOVERNMENT OFFICER'S SIGNATURE</span></div>
-    <div class="cell s3"><span class="fl">19. DATE SIGNED</span></div>
-  </div>
-  <div class="foot"><span>NSN 7540-01-119-5628 &nbsp; 50297-102</span><span>OPTIONAL FORM 297 (Rev. 7-90) &nbsp; USDA/USDI</span></div>
-</div>
+${label ? `<div class="pbar" style="text-align:left;color:#444;font-size:12px;margin-bottom:8px">${esc(label)}</div>` : ''}
+${body}
 <div class="pbar"><button onclick="window.print()">🖨 Print / Save as PDF</button></div>
 </body></html>`;
 }
