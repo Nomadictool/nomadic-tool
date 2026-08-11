@@ -801,8 +801,7 @@ body {
         <div class="section-label" style="margin-top:0">Satellites</div>
         <div style="font-size:12px;color:var(--gray-500);margin-bottom:8px">
           Each satellite has its own S number and gets its own shift ticket. Add them on the
-          <strong>Fleet</strong> tab first (Make <em>Starlink</em>, Model <em>Satellite</em> or <em>Satellite Mini</em>)
-          so serial numbers and models fill in automatically.
+          <strong>📡 Satellites</strong> tab first so serial numbers and models fill in automatically.
         </div>
         <div id="setup-satellites-list"></div>
         <button type="button" class="btn btn-outline btn-sm" onclick="addSatelliteRow()" style="margin-top:6px">+ Add Satellite</button>
@@ -898,6 +897,7 @@ body {
   <button class="nav-btn" onclick="showScreen('season')" id="nav-season" style="display:none">📊 Season</button>
   <button class="nav-btn" onclick="showScreen('summary')" id="nav-summary" style="display:none">📋 Summary</button>
   <button class="nav-btn" onclick="showScreen('fleet')" id="nav-fleet" style="display:none">🚛 Fleet</button>
+  <button class="nav-btn" onclick="showScreen('satellites')" id="nav-satellites" style="display:none">📡 Satellites</button>
   <button class="nav-btn" onclick="showScreen('locations')" id="nav-locations" style="display:none">📍 Locations</button>
 </nav>
 
@@ -1471,6 +1471,19 @@ body {
   </div>
 
 
+  <!-- ══ SATELLITES SCREEN (admin only) ══ -->
+  <div class="screen" id="screen-satellites">
+    <div class="flex-between" style="margin-bottom:20px">
+      <div>
+        <h1 style="font-family:'Barlow Condensed',sans-serif;font-size:26px;font-weight:700">Satellites</h1>
+        <p class="text-sm text-muted mt-8">Starlink units available to rent. Each one needs a serial number so its shift ticket fills in.</p>
+      </div>
+      <button class="btn btn-primary" onclick="openSatelliteEdit(null)">+ Add Satellite</button>
+    </div>
+    <div id="satellite-stats" style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px"></div>
+    <div id="satellite-list"></div>
+  </div>
+
   <!-- ══ LOCATIONS SCREEN (admin only) ══ -->
   <div class="screen" id="screen-locations">
     <div class="flex-between" style="margin-bottom:20px">
@@ -1627,6 +1640,63 @@ body {
       <div style="display:flex;gap:10px;margin-left:auto">
         <button class="btn btn-outline" onclick="closeUnitEdit()">Cancel</button>
         <button class="btn btn-primary" onclick="saveUnit()">Save Unit</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ SATELLITE EDIT MODAL ══════════ -->
+<div class="modal-overlay" id="satellite-edit-modal" style="display:none;z-index:620">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-header">
+      <div class="modal-title" id="satellite-edit-title">Add Satellite</div>
+      <button onclick="closeSatelliteEdit()" style="background:none;border:none;color:var(--gray-400);font-size:20px;cursor:pointer">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="satellite-edit-id">
+      <div class="form-grid" style="margin-bottom:14px">
+        <div class="form-group">
+          <label>Name</label>
+          <input type="text" id="satellite-edit-name" placeholder="e.g. Sat 1">
+        </div>
+        <div class="form-group">
+          <label>Model</label>
+          <select id="satellite-edit-model">
+            <option value="Satellite">Satellite (standard)</option>
+            <option value="Satellite Mini">Satellite Mini</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group" style="margin-bottom:14px">
+        <label>Serial Number</label>
+        <input type="text" id="satellite-edit-serial" placeholder="Prints in field 9 of the shift ticket" style="font-family:'IBM Plex Mono',monospace;text-transform:uppercase">
+      </div>
+      <div class="form-grid" style="margin-bottom:14px">
+        <div class="form-group">
+          <label>When Not on Incident</label>
+          <select id="satellite-edit-status">
+            <option value="available">Available</option>
+            <option value="maintenance">In Maintenance</option>
+            <option value="storage">In Storage</option>
+            <option value="retired">Retired</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Storage Location</label>
+          <input type="text" id="satellite-edit-storage" placeholder="e.g. Signal Hill, CA">
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Notes</label>
+        <textarea id="satellite-edit-notes" rows="2" style="width:100%;padding:8px;border:1px solid var(--gray-200);border-radius:var(--radius);font-size:13px;font-family:inherit;resize:vertical"></textarea>
+      </div>
+      <div id="satellite-edit-error" style="color:var(--red);font-size:12px;margin-top:8px"></div>
+    </div>
+    <div class="modal-footer" style="justify-content:space-between">
+      <button class="btn btn-danger" id="satellite-delete-btn" onclick="deleteSatellite()" style="display:none">Delete</button>
+      <div style="display:flex;gap:10px;margin-left:auto">
+        <button class="btn btn-outline" onclick="closeSatelliteEdit()">Cancel</button>
+        <button class="btn btn-primary" onclick="saveSatellite()">Save</button>
       </div>
     </div>
   </div>
@@ -2735,7 +2805,7 @@ function onLoginSuccess() {
   const wrapEl = document.getElementById('logged-in-as-display');
   if (nameEl) nameEl.textContent = state._session?.employee?.name || '—';
   if (wrapEl) wrapEl.style.display = 'flex';
-  const adminIds = ['manage-employees-btn', 'season-report-btn', 'nav-expense-review', 'nav-rates', 'nav-season', 'nav-summary', 'nav-fleet', 'nav-locations', 'manage-incidents-btn', 'day-total-box', 'help-admin-sections'];
+  const adminIds = ['manage-employees-btn', 'season-report-btn', 'nav-expense-review', 'nav-rates', 'nav-season', 'nav-summary', 'nav-fleet', 'nav-satellites', 'nav-locations', 'manage-incidents-btn', 'day-total-box', 'help-admin-sections'];
   adminIds.forEach(elId => {
     const el = document.getElementById(elId);
     if (el) el.style.display = state.isAdmin ? '' : 'none';
@@ -2928,7 +2998,8 @@ function updateSetupServiceFields() {
 }
 
 function fleetUnitDatalistOptions() {
-  return (_unitsCache || []).map(u => `<option value="${escHtml(u.name)}">`).join('');
+  // Only satellites are pickable here — they're managed on the Satellites tab.
+  return getSatelliteUnits().map(u => `<option value="${escHtml(u.name)}">`).join('');
 }
 
 function addSatelliteRow(unitName, sNumber) {
@@ -3367,6 +3438,7 @@ function showScreen(name) {
   if (name === 'expenses') loadMyExpenseReports();
   if (name === 'expense-review') loadExpenseReviewList();
   if (name === 'fleet') renderFleetScreen();
+  if (name === 'satellites') renderSatelliteScreen();
   if (name === 'locations') renderLocationsScreen();
 }
 
@@ -6361,6 +6433,14 @@ function getUnitEffectiveStatus(unit) {
   return map[unit.manual_status] || map.available;
 }
 
+// Satellites live in the same units table but get their own screen — the Fleet
+// tab is for vehicles and trailers, and a pile of dishes made it unreadable.
+// The type is set behind the scenes by the Satellites form, never picked by hand.
+const SATELLITE_UNIT_TYPE = 'Satellite';
+function isSatelliteUnit(u) { return !!(u && u.type === SATELLITE_UNIT_TYPE); }
+function getFleetUnits()     { return (_unitsCache || []).filter(u => !isSatelliteUnit(u)); }
+function getSatelliteUnits() { return (_unitsCache || []).filter(isSatelliteUnit); }
+
 async function renderFleetScreen() {
   if (!state.isAdmin) return;
   if (_unitsCache.length === 0) await reloadUnits();
@@ -6368,15 +6448,18 @@ async function renderFleetScreen() {
   const unitsEl = document.getElementById('fleet-units');
   if (!statsEl || !unitsEl) return;
 
-  const units = _unitsCache.map(u => ({ ...u, effectiveStatus: getUnitEffectiveStatus(u) }));
+  const units = getFleetUnits().map(u => ({ ...u, effectiveStatus: getUnitEffectiveStatus(u) }));
 
-  // Ghost rows for incident units not yet in the registry
-  const trackedNames = new Set(units.map(u => u.name));
+  // Ghost rows for incident units not yet in the registry (satellites excluded —
+  // they're managed on their own screen).
+  const satNames = new Set(getSatelliteUnits().map(u => u.name));
+  const trackedNames = new Set([...units.map(u => u.name), ...satNames]);
   const ghosts = [];
   state._incidents.forEach(e => {
     if (!e.incident || e.archived) return;
+    const satOnIncident = new Set((e.incident.satellites || []).map(s => s.unitName));
     getIncidentUnitNames(e.incident).forEach(n => {
-      if (!n || trackedNames.has(n)) return;
+      if (!n || trackedNames.has(n) || satOnIncident.has(n)) return;
       ghosts.push({ name: n, ghost: true, effectiveStatus: { key: 'incident', label: 'On Incident — ' + (e.incident.name || n), cls: 'us-incident' } });
       trackedNames.add(n);
     });
@@ -6551,6 +6634,127 @@ async function deleteUnit() {
   await reloadUnits();
   closeUnitEdit();
   renderFleetScreen();
+}
+
+// ══════════ SATELLITES ══════════
+var _editingSatelliteId = null;
+
+async function renderSatelliteScreen() {
+  if (!state.isAdmin) return;
+  if (_unitsCache.length === 0) await reloadUnits();
+  const statsEl = document.getElementById('satellite-stats');
+  const listEl = document.getElementById('satellite-list');
+  if (!statsEl || !listEl) return;
+
+  const sats = getSatelliteUnits().map(u => ({ ...u, effectiveStatus: getUnitEffectiveStatus(u) }));
+  const counts = { available: 0, incident: 0, other: 0 };
+  sats.forEach(u => {
+    const k = u.effectiveStatus.key;
+    if (k === 'incident') counts.incident++;
+    else if (k === 'available') counts.available++;
+    else counts.other++;
+  });
+  statsEl.innerHTML = [
+    { num: counts.available, label: 'Available',       color: '#065f46' },
+    { num: counts.incident,  label: 'On Incident',     color: '#92400e' },
+    { num: counts.other,     label: 'Maintenance / Storage', color: '#374151' },
+  ].map(s => `<div class="fleet-stat-card"><div class="fleet-stat-num" style="color:${s.color}">${s.num}</div><div class="fleet-stat-label">${s.label}</div></div>`).join('');
+
+  if (!sats.length) {
+    listEl.innerHTML = '<div class="empty-state"><div class="empty-icon">📡</div><p>No satellites yet. Click <strong>+ Add Satellite</strong> to add one.</p></div>';
+    return;
+  }
+  listEl.innerHTML = sats.map(u => {
+    const st = u.effectiveStatus;
+    const isMini = /mini/i.test(u.model || '');
+    const missingSerial = !u.vin;
+    return `<div class="unit-row">
+      <div class="unit-name-tag" style="min-width:96px">${escHtml(u.name)}</div>
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <span class="unit-status-badge ${st.cls}">${escHtml(st.label)}</span>
+          <span style="font-size:12px;font-weight:600;color:${isMini ? '#92400e' : 'var(--gray-700)'};background:${isMini ? '#fef3c7' : 'var(--gray-100)'};padding:2px 8px;border-radius:10px">${escHtml(u.model || 'Satellite')}</span>
+          ${missingSerial
+            ? '<span style="font-size:12px;color:#c0392b">⚠ No serial number — shift ticket field 9 will be blank</span>'
+            : `<span style="font-size:12px;color:var(--gray-500);font-family:'IBM Plex Mono',monospace">${escHtml(u.vin)}</span>`}
+        </div>
+        ${u.storage_location ? `<div style="font-size:12px;color:var(--gray-500);margin-top:4px">📍 ${escHtml(u.storage_location)}</div>` : ''}
+      </div>
+      <button class="btn btn-outline btn-sm" onclick="openSatelliteEdit('${u.id}')">Edit</button>
+    </div>`;
+  }).join('');
+}
+
+function openSatelliteEdit(id) {
+  _editingSatelliteId = id;
+  document.getElementById('satellite-edit-error').textContent = '';
+  const del = document.getElementById('satellite-delete-btn');
+  const nameEl = document.getElementById('satellite-edit-name');
+  if (id) {
+    const u = _unitsCache.find(x => x.id === id);
+    if (!u) return;
+    document.getElementById('satellite-edit-title').textContent = 'Edit — ' + u.name;
+    nameEl.value = u.name; nameEl.disabled = true;
+    document.getElementById('satellite-edit-model').value = /mini/i.test(u.model || '') ? 'Satellite Mini' : 'Satellite';
+    document.getElementById('satellite-edit-serial').value = u.vin || '';
+    document.getElementById('satellite-edit-status').value = u.manual_status || 'available';
+    document.getElementById('satellite-edit-storage').value = u.storage_location || '';
+    document.getElementById('satellite-edit-notes').value = u.notes || '';
+    if (del) del.style.display = '';
+  } else {
+    document.getElementById('satellite-edit-title').textContent = 'Add Satellite';
+    nameEl.value = ''; nameEl.disabled = false;
+    document.getElementById('satellite-edit-model').value = 'Satellite';
+    document.getElementById('satellite-edit-serial').value = '';
+    document.getElementById('satellite-edit-status').value = 'available';
+    document.getElementById('satellite-edit-storage').value = '';
+    document.getElementById('satellite-edit-notes').value = '';
+    if (del) del.style.display = 'none';
+  }
+  document.getElementById('satellite-edit-modal').style.display = 'flex';
+}
+function closeSatelliteEdit() { document.getElementById('satellite-edit-modal').style.display = 'none'; }
+
+async function saveSatellite() {
+  const errEl = document.getElementById('satellite-edit-error');
+  const name = document.getElementById('satellite-edit-name').value.trim();
+  if (!name) { errEl.textContent = 'Name is required.'; return; }
+  errEl.textContent = '';
+  const row = {
+    name,
+    type: SATELLITE_UNIT_TYPE,          // set here, never chosen by hand
+    make: 'Starlink',                   // constant for satellites
+    model: document.getElementById('satellite-edit-model').value,
+    vin: document.getElementById('satellite-edit-serial').value.trim().toUpperCase() || null,
+    manual_status: document.getElementById('satellite-edit-status').value,
+    storage_location: document.getElementById('satellite-edit-storage').value.trim() || null,
+    notes: document.getElementById('satellite-edit-notes').value.trim() || null,
+    updated_at: new Date().toISOString(),
+  };
+  let error;
+  if (_editingSatelliteId) {
+    ({ error } = await _sb.from('units').update(row).eq('id', _editingSatelliteId));
+  } else {
+    ({ error } = await _sb.from('units').insert(row));
+    if (error && error.message && error.message.toLowerCase().includes('unique')) {
+      errEl.textContent = 'A unit named "' + name + '" already exists.'; return;
+    }
+  }
+  if (error) { errEl.textContent = 'Save failed: ' + error.message; return; }
+  await reloadUnits();
+  closeSatelliteEdit();
+  renderSatelliteScreen();
+}
+
+async function deleteSatellite() {
+  if (!_editingSatelliteId) return;
+  const u = _unitsCache.find(x => x.id === _editingSatelliteId);
+  if (!confirm('Remove ' + (u ? u.name : 'this satellite') + '? This cannot be undone.')) return;
+  const { error } = await _sb.from('units').delete().eq('id', _editingSatelliteId);
+  if (error) { document.getElementById('satellite-edit-error').textContent = 'Delete failed: ' + error.message; return; }
+  await reloadUnits();
+  closeSatelliteEdit();
+  renderSatelliteScreen();
 }
 
 function getUnitCurrentLocation(u, effectiveStatus) {
@@ -7309,6 +7513,9 @@ function collectLocationPoints() {
   (_unitsCache || []).forEach(u => {
     if (onIncident.has(u.name)) return;              // already pinned at its fire
     if (u.manual_status === 'retired') return;
+    // Satellites are stored by the dozen at one yard — pinning each would stack
+    // identical markers and tell the ops manager nothing useful.
+    if (isSatelliteUnit(u)) return;
     // Where the unit is actually stored wins; dispatch base is the fallback so
     // units without a storage location still show up somewhere sensible.
     const stored = (u.storage_location || '').trim();
@@ -7527,7 +7734,7 @@ function openShiftTicketModal() {
     const missingFleet = sats.filter(s => !s.unit).map(s => s.unitName || '(unnamed)');
     const missingS = sats.filter(s => !s.sNumber).length;
     eq = `<strong>${sats.length}</strong> satellite${sats.length !== 1 ? 's' : ''} — one ticket each, using its own S number and serial.`
-      + (missingFleet.length ? `<br><span style="color:#c0392b">No fleet record for: ${escHtml(missingFleet.join(', '))} — add them on the Fleet tab so serial/model fill in.</span>` : '')
+      + (missingFleet.length ? `<br><span style="color:#c0392b">Not found on the Satellites tab: ${escHtml(missingFleet.join(', '))} — add them there so serial/model fill in.</span>` : '')
       + (missingS ? `<br><span style="color:#b45309">${missingS} missing an S number — add it in the incident Setup.</span>` : '');
   } else {
     const unit = getShiftTicketUnit(inc);
